@@ -1,0 +1,43 @@
+KPL — Kasidia's Prompt Law
+Copyright 2026 KPL contributors.
+
+This repository is a reorganized and modified skill, not an upstream release.
+Modified files: SKILL.md and all files under references/.
+Modification date: 2026-10-22.
+
+video-prompting-skill
+Source: https://github.com/Square-Zero-Labs/video-prompting-skill
+Revision: 8d72999ebe8bde390a658d3f6f8a79558b73bd5c
+Upstream attribution: Square-Zero-Labs and contributors.
+License: Apache License 2.0; full original text in
+LICENSES/video-prompting-Apache-2.0.txt.
+The upstream LICENSE contains the standard unfilled copyright appendix;
+no additional specific copyright notice or NOTICE file was found in that revision.
+
+DirectorSKILL
+Source: https://github.com/wuwangzhang1216/DirectorSKILL
+Revision: c65ae0d14457053efb1e354c7e7f7e120d97fad1
+Copyright (c) 2026 wangzhang-wu
+License: MIT; full original copyright and permission notice in
+LICENSES/DirectorSKILL-MIT.txt.
+
+Local Codex Desktop imagegen skill
+Read as the user's selected local source; license: Apache License 2.0.
+Public provenance counterpart: https://github.com/openai/skills
+Public revision checked: 49f948faa9258a0c61caceaf225e179651397431
+Attribution: OpenAI and contributors.
+Full license supplied with the local skill is preserved in
+LICENSES/imagegen-Apache-2.0.txt.
+The local prompt files differ from that public revision. KPL adapts only the
+general creative rules, not the local host's execution instructions.
+The license appendix contains a generic copyright placeholder, not a filled
+OpenAI copyright statement; no new upstream notice is fabricated here.
+
+KPL's original additions and modifications are offered under Apache License 2.0
+(LICENSE). This does not remove or replace the MIT terms covering adapted
+DirectorSKILL material, or the Apache conditions covering other upstream material.
+Both license sets and their notices must remain with redistributed derivatives.
+
+MiniMax and ByteDance/OpenAI official documentation is cited for interface facts
+and necessary syntax. Full documentation, sample films and media assets are not
+redistributed, and their respective rights remain with their owners.

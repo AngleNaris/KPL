@@ -1,0 +1,30 @@
+{
+  "checkedOn": "2026-10-22",
+  "method": "Web reader opened official pages and returned relevant body text; separate from direct Node HTTP results",
+  "records": [
+    {
+      "url": "https://developers.openai.com/api/reference/resources/images/methods/generate",
+      "title": "Create image | OpenAI API Reference",
+      "bodyRead": true,
+      "factsChecked": ["gpt-image-2.5-sunburst and flare including dated snapshots", "model and prompt", "data.b64_json"]
+    },
+    {
+      "url": "https://developers.openai.com/api/reference/resources/images/methods/edit",
+      "title": "Create image edit | OpenAI API Reference",
+      "bodyRead": true,
+      "factsChecked": ["JSON images objects with image_url or file_id", "mask object", "multipart image[]", "input_fidelity 2.5 support not explicit"]
+    },
+    {
+      "url": "https://developers.openai.com/api/docs/guides/image-generation",
+      "title": "Image generation | OpenAI API",
+      "bodyRead": true,
+      "factsChecked": ["mask applied to first input", "mask shape not guaranteed exact", "transparent output format"]
+    },
+    {
+      "url": "https://developers.openai.com/api/docs/guides/image-prompting",
+      "title": "Image prompting | OpenAI API",
+      "bodyRead": true,
+      "factsChecked": ["specific edits and preservation constraints", "reference guidance", "natural language prompts"]
+    }
+  ]
+}

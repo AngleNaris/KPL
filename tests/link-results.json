@@ -1,0 +1,120 @@
+{
+  "checkedAt": "2026-10-22T09:49:33.584Z",
+  "meaning": "Reachability only, not format/content/generation validation",
+  "results": [
+    {
+      "url": "https://developers.openai.com/api/docs/guides/image-generation",
+      "status": 403,
+      "ok": false,
+      "finalUrl": "https://developers.openai.com/api/docs/guides/image-generation"
+    },
+    {
+      "url": "https://developers.openai.com/api/docs/guides/image-prompting",
+      "status": 403,
+      "ok": false,
+      "finalUrl": "https://developers.openai.com/api/docs/guides/image-prompting"
+    },
+    {
+      "url": "https://developers.openai.com/api/reference/resources/images/methods/edit",
+      "status": 403,
+      "ok": false,
+      "finalUrl": "https://developers.openai.com/api/reference/resources/images/methods/edit"
+    },
+    {
+      "url": "https://developers.openai.com/api/reference/resources/images/methods/generate",
+      "status": 403,
+      "ok": false,
+      "finalUrl": "https://developers.openai.com/api/reference/resources/images/methods/generate"
+    },
+    {
+      "url": "https://docs.byteplus.com/en/docs/ModelArk/2607688",
+      "status": 200,
+      "ok": true,
+      "finalUrl": "https://docs.byteplus.com/en/docs/modelark/seedance-2-5?redirect=1"
+    },
+    {
+      "url": "https://docs.byteplus.com/en/docs/ModelArk/2607689",
+      "status": 200,
+      "ok": true,
+      "finalUrl": "https://docs.byteplus.com/en/docs/modelark/seedance-2-5-prompt-guide?redirect=1"
+    },
+    {
+      "url": "https://docs.byteplus.com/en/docs/modelark/create-video-generation-task-api",
+      "status": 200,
+      "ok": true,
+      "finalUrl": "https://docs.byteplus.com/en/docs/modelark/create-video-generation-task-api"
+    },
+    {
+      "url": "https://dreamina.capcut.com/seedance/how-to-use-seedance-2-5",
+      "status": 200,
+      "ok": true,
+      "finalUrl": "https://dreamina.capcut.com/seedance/how-to-use-seedance-2-5"
+    },
+    {
+      "url": "https://github.com/MiniMax-AI/MiniMax-H3/blob/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing/references/base-en.txt",
+      "status": 200,
+      "ok": true,
+      "finalUrl": "https://github.com/MiniMax-AI/MiniMax-H3/blob/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing/references/base-en.txt"
+    },
+    {
+      "url": "https://github.com/MiniMax-AI/MiniMax-H3/blob/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing/references/ref-en.txt",
+      "status": 200,
+      "ok": true,
+      "finalUrl": "https://github.com/MiniMax-AI/MiniMax-H3/blob/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing/references/ref-en.txt"
+    },
+    {
+      "url": "https://github.com/MiniMax-AI/MiniMax-H3/blob/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing/SKILL.md",
+      "status": 200,
+      "ok": true,
+      "finalUrl": "https://github.com/MiniMax-AI/MiniMax-H3/blob/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing/SKILL.md"
+    },
+    {
+      "url": "https://github.com/MiniMax-AI/MiniMax-H3/tree/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing",
+      "status": 200,
+      "ok": true,
+      "finalUrl": "https://github.com/MiniMax-AI/MiniMax-H3/tree/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing"
+    },
+    {
+      "url": "https://github.com/openai/skills/tree/49f948faa9258a0c61caceaf225e179651397431/skills/.system/imagegen",
+      "status": 200,
+      "ok": true,
+      "finalUrl": "https://github.com/openai/skills/tree/49f948faa9258a0c61caceaf225e179651397431/skills/.system/imagegen"
+    },
+    {
+      "url": "https://github.com/Square-Zero-Labs/video-prompting-skill",
+      "status": 200,
+      "ok": true,
+      "finalUrl": "https://github.com/Square-Zero-Labs/video-prompting-skill"
+    },
+    {
+      "url": "https://github.com/Square-Zero-Labs/video-prompting-skill/tree/8d72999ebe8bde390a658d3f6f8a79558b73bd5c",
+      "status": 200,
+      "ok": true,
+      "finalUrl": "https://github.com/Square-Zero-Labs/video-prompting-skill/tree/8d72999ebe8bde390a658d3f6f8a79558b73bd5c"
+    },
+    {
+      "url": "https://github.com/wuwangzhang1216/DirectorSKILL",
+      "status": 200,
+      "ok": true,
+      "finalUrl": "https://github.com/wuwangzhang1216/DirectorSKILL"
+    },
+    {
+      "url": "https://github.com/wuwangzhang1216/DirectorSKILL/tree/c65ae0d14457053efb1e354c7e7f7e120d97fad1",
+      "status": 200,
+      "ok": true,
+      "finalUrl": "https://github.com/wuwangzhang1216/DirectorSKILL/tree/c65ae0d14457053efb1e354c7e7f7e120d97fad1"
+    },
+    {
+      "url": "https://seed.bytedance.com/en/blog/one-take-creation-flexible-referencing-introducing-seedance-2-5",
+      "status": 200,
+      "ok": true,
+      "finalUrl": "https://seed.bytedance.com/en/blog/one-take-creation-flexible-referencing-introducing-seedance-2-5"
+    },
+    {
+      "url": "https://seed.bytedance.com/en/seedance2_5",
+      "status": 200,
+      "ok": true,
+      "finalUrl": "https://seed.bytedance.com/en/seedance2_5"
+    }
+  ]
+}

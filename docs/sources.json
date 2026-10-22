@@ -1,0 +1,180 @@
+{
+  "checkedOn": "2026-10-22",
+  "records": [
+    {
+      "id": "video-prompting",
+      "url": "https://github.com/Square-Zero-Labs/video-prompting-skill",
+      "commit": "8d72999ebe8bde390a658d3f6f8a79558b73bd5c",
+      "license": "Apache-2.0",
+      "readFiles": [
+        {
+          "path": "video-prompting/SKILL.md",
+          "sha256": "b82b7ece36550df9bea30849e65003d99de6b96076a0c95802ef141d2299cfca"
+        },
+        {
+          "path": "video-prompting/references/models/minimax-h3/prompting.md",
+          "sha256": "daefe9e78976c157bd7e2744ce8f09a8646594d6a0d1fb88fd470d1dc24e459b"
+        },
+        {
+          "path": "video-prompting/references/models/seedance2-5/prompting.md",
+          "sha256": "4946f512b270458765392d5d31c95191951ffe8f669611bc10d3aee4f80908cc"
+        },
+        {
+          "path": "video-prompting/references/workflows/character-sheets.md",
+          "sha256": "5969f8c8ef9f29ac73ff1f36a0ba068be3df1734a44798a55aea03d417eb94c7"
+        },
+        {
+          "path": "LICENSE",
+          "sha256": "c95bae1d1ce0235ecccd3560b772ec1efb97f348a79f0fbe0a634f0c2ccefe2c"
+        },
+        {
+          "path": "README.md",
+          "sha256": "9fbc783b37a731c1fdfdf70a78c4d16ece22362581a26356571ee66dfea4670a"
+        }
+      ]
+    },
+    {
+      "id": "DirectorSKILL",
+      "url": "https://github.com/wuwangzhang1216/DirectorSKILL",
+      "commit": "c65ae0d14457053efb1e354c7e7f7e120d97fad1",
+      "license": "MIT",
+      "readFiles": [
+        {
+          "path": "SKILL.md",
+          "sha256": "543be6ece626beaa7dbc36b8225dcdc0b763d8044563189e842b306bb5cfd792"
+        },
+        {
+          "path": "references/genre-playbooks.md",
+          "sha256": "5713431b20dcd6c4804d086385106ecce9ef483210287dfdceacc351077d33e1"
+        },
+        {
+          "path": "references/blocking-and-staging.md",
+          "sha256": "16203dd654d61459df6eabb7754d5b450a17774ad18484f27a1c05e73d392402"
+        },
+        {
+          "path": "references/cinematic-language.md",
+          "sha256": "2e899733fdefb12d316faeeaed1a5dc466dea55ef3818b28e7cec13d7a501933"
+        },
+        {
+          "path": "references/continuity-bible.md",
+          "sha256": "92aad85488aee0fcad6d432ce29f66286d66245bb2a17499a325afb356c74826"
+        },
+        {
+          "path": "references/sound-and-dialogue.md",
+          "sha256": "fcc99cacf1bc35caf3dd5e9430a0f3c731b5b65868171cc488282559017d43de"
+        },
+        {
+          "path": "references/editing-and-assembly.md",
+          "sha256": "8256bb843e8d45ba66aba927edef30cd586a0a32030e4a4639d26be156e850de"
+        },
+        {
+          "path": "LICENSE",
+          "sha256": "df731ea2e1ffd3b8890ad246da3df96ceba3301c16fb4970c16811df4c728b56"
+        }
+      ]
+    },
+    {
+      "id": "MiniMax-H3-official",
+      "url": "https://github.com/MiniMax-AI/MiniMax-H3",
+      "commit": "d21241f0a4b3acbb34c97dae47fa417b7065e438",
+      "license": "interface-facts-only",
+      "readFiles": [
+        {
+          "path": "skills/h3-prompt-writing/SKILL.md",
+          "sha256": "a7000443588ca3f145e3b3fd8900f14e0325dc460bd811268fac89a9dc8e56d0"
+        },
+        {
+          "path": "skills/h3-prompt-writing/references/base-en.txt",
+          "sha256": "2cfebc096a6e08370f288d468d90b60f7f9bcb938f94bf090816e910e48e75fc"
+        },
+        {
+          "path": "skills/h3-prompt-writing/references/ref-en.txt",
+          "sha256": "1e574f356716ad55612247ffb7bbccbcdb484ad96599d63c7dca1af186b1fab7"
+        }
+      ]
+    },
+    {
+      "id": "imagegen-public-provenance-check",
+      "url": "https://github.com/openai/skills",
+      "commit": "49f948faa9258a0c61caceaf225e179651397431",
+      "license": "Apache-2.0",
+      "readFiles": [
+        {
+          "path": "skills/.system/imagegen/SKILL.md",
+          "sha256": "826d05b806d51fa81cd650f1c0854b0a1f7fbccd1b152c588ded1797a2e7218f"
+        },
+        {
+          "path": "skills/.system/imagegen/references/prompting.md",
+          "sha256": "e547ff9fe8e0de8e844c70a550e0b66e0f72323307e5acd0e562678f10eb0db2"
+        },
+        {
+          "path": "skills/.system/imagegen/references/sample-prompts.md",
+          "sha256": "82b0e14db9eace50fca0a4e728b535ded0f3661893538e6b15b18a9a82b71d5b"
+        },
+        {
+          "path": "skills/.system/imagegen/LICENSE.txt",
+          "sha256": "4dd13869245e356246a5b770723247bbb80a8f07a181d1d3d873a1734297cdb9"
+        }
+      ]
+    }
+  ],
+  "local": [
+    {
+      "id": "imagegen",
+      "kind": "user-selected-local-skill",
+      "applicability": "GPT Image 2 default; general prompt principles only",
+      "license": "Apache-2.0 (bundled LICENSE.txt)",
+      "readFiles": [
+        {
+          "path": "SKILL.md",
+          "sha256": "706d4d96e1d5c9e6023fe3ccabba1bb34b364024d344fd25b8515ec7d28fe3c4"
+        },
+        {
+          "path": "references/prompting.md",
+          "sha256": "d957a45cb24fe2cf1a85858674fc533f15a5f4621355f559a13a93168999c2dd"
+        },
+        {
+          "path": "references/sample-prompts.md",
+          "sha256": "76cc8a2988efb6e844a99ff9908b2b11cc07467510fc909002abcc0ee3f0701b"
+        },
+        {
+          "path": "LICENSE.txt",
+          "sha256": "44e03f7e263eb3ad256440c1eeab5e49168baff5a78ecef9a5447261cf3a91bc"
+        }
+      ]
+    },
+    {
+      "id": "image-prompt-refinement",
+      "kind": "user-selected-local-skill",
+      "applicability": "model-independent",
+      "license": "not-established; no raw redistribution",
+      "readFiles": [
+        {
+          "path": "SKILL.md",
+          "sha256": "70a26b1058fe08a351fdbeb32de9fe525fd67aaebb105e371b95eff028efcda3"
+        }
+      ]
+    }
+  ],
+  "licenses": [
+    {
+      "path": "LICENSE",
+      "sha256": "c95bae1d1ce0235ecccd3560b772ec1efb97f348a79f0fbe0a634f0c2ccefe2c"
+    },
+    {
+      "path": "LICENSES/video-prompting-Apache-2.0.txt",
+      "sha256": "c95bae1d1ce0235ecccd3560b772ec1efb97f348a79f0fbe0a634f0c2ccefe2c"
+    },
+    {
+      "path": "LICENSES/DirectorSKILL-MIT.txt",
+      "sha256": "df731ea2e1ffd3b8890ad246da3df96ceba3301c16fb4970c16811df4c728b56"
+    },
+    {
+      "path": "LICENSES/imagegen-Apache-2.0.txt",
+      "sha256": "44e03f7e263eb3ad256440c1eeab5e49168baff5a78ecef9a5447261cf3a91bc"
+    }
+  ],
+  "readScope": "Main skills fully read; references read for relevant format/directing sections; unneeded model chapters are not redistributed.",
+  "localImagegenEqualsPublicRevision": false,
+  "rawLocalInstructionsRedistributed": false
+}
