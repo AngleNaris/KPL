@@ -17,14 +17,16 @@ const check = (name,fn) => {fn(); checks.push(name);};
 const files=walk(root);
 check('single entry and required modules',()=>{
   assert.deepEqual(files.filter(p=>path.basename(p)==='SKILL.md').map(rel),['SKILL.md']);
-  for(const p of ['README.md','NOTICE','LICENSE','references/directing.md','references/video.md','references/image.md','docs/sources.json','tests/behavior.md']) assert(fs.statSync(path.join(root,p)).isFile(),p);
+  for(const p of ['README.md','NOTICE','LICENSE','references/spec-workflow.md','assets/creative-spec.md','references/directing.md','references/video.md','references/image.md','docs/sources.json','tests/behavior.md','tests/spec-execution.json','tests/spec-review.json']) assert(fs.statSync(path.join(root,p)).isFile(),p);
   assert.deepEqual(fs.readdirSync(path.join(root,'references/formats')).sort(),['gpt-image-2.5.md','minimax-h3.md','seedance-2.5.md']);
 });
 check('frontmatter (supported flat YAML subset)',()=>{
   const m=read('SKILL.md').match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);assert(m,'frontmatter');
-  const data=Object.fromEntries(m[1].split(/\r?\n/).map(line=>{
+  const fields=m[1].split(/\r?\n/).map(line=>{
     const v=line.match(/^(name|description): (.+)$/); assert(v,'unexpected field or unsupported YAML shape'); return [v[1],v[2]];
-  }));
+  });
+  assert.equal(new Set(fields.map(x=>x[0])).size,fields.length,'duplicate frontmatter key');
+  const data=Object.fromEntries(fields);
   assert.equal(data.name,'kpl');assert(data.description.length>0&&data.description.length<=1024);
   assert(!/[<>]/.test(data.description));assert(!/\[TODO:/.test(read('SKILL.md')));
 });
@@ -80,12 +82,53 @@ check('format validator rejects invalid field order, duplicates and first-shot t
   assert.throws(()=>validateH3(s+'\noverall_soundscape: duplicate',baseFields));
   assert.throws(()=>validateH3(s.replace('[Shot 1]','[Shot 1] At 00:00.000,'),baseFields));
 });
+check('creative-spec template and independent scenario schema',()=>{
+  const template=read('assets/creative-spec.md');
+  for(const h of ['项目与当前交付','风格与资产','镜头与模式','验收与未决问题','本轮变更影响'])assert(template.includes('## '+h),h);
+  const suite=JSON.parse(read('tests/spec-inputs.json'));
+  const rubric=JSON.parse(read('tests/spec-rubric.json'));
+  assert.equal(suite.cases.length,9);assert.equal(rubric.version,1);
+  const ids=suite.cases.map(x=>x.id);assert.equal(new Set(ids).size,ids.length);
+  assert.deepEqual(ids,Array.from({length:9},(_,i)=>`S${String(i+1).padStart(2,'0')}`));
+  assert.deepEqual(rubric.cases.map(x=>x.id),ids);
+  for(const c of suite.cases)assert(typeof c.request==='string'&&c.request.length>30);
+  for(const c of rubric.cases)assert(c.criteria.length>=3&&c.criteria.every(x=>typeof x==='string'&&x.length>10));
+});
+check('independent evidence consistency (not automated semantic grading)',()=>{
+    const review=JSON.parse(read('tests/spec-review.json'));
+    const rubric=JSON.parse(read('tests/spec-rubric.json'));
+    const execution=JSON.parse(read('tests/spec-execution.json'));
+    assert.equal(execution.actualGeneration,false);assert.equal(execution.rawResponsesEdited,false);
+    assert.equal(execution.executions.length,2);
+    for(const x of execution.skillFiles)assert.equal(digest(x.path),x.sha256,'evaluated skill changed: '+x.path);
+    assert.deepEqual(execution.executions.flatMap(x=>x.cases),rubric.cases.map(x=>x.id));
+    for(const run of execution.executions){
+      assert(run.readFiles.includes('SKILL.md'));
+      assert(!run.readFiles.includes('tests/spec-rubric.json'));
+      for(const x of run.outputs)assert.equal(digest(x.path),x.sha256,'raw execution response changed: '+x.id);
+    }
+    assert.equal(review.method,'independent-text-review');
+    assert.equal(review.actualGeneration,false);
+    assert.deepEqual(review.cases.map(x=>x.id),rubric.cases.map(x=>x.id));
+    for(const c of review.cases){
+      const r=rubric.cases.find(x=>x.id===c.id);
+      assert.equal(c.criteria.length,r.criteria.length,c.id);
+      assert.equal(c.outputSha256,digest(c.output),c.id+' raw response hash');
+      for(const judgement of c.criteria){assert(typeof judgement.pass==='boolean');assert(judgement.evidence.length>10);}
+      assert.equal(c.pass,c.criteria.every(x=>x.pass),c.id+' summary');
+    }
+    assert.equal(review.passed,review.cases.filter(x=>x.pass).length);
+    assert.equal(review.passed,rubric.cases.length,'independent review reports failures');
+});
 check('publication hygiene',()=>{
   const prose=files.filter(p=>/\.(md|json)$/.test(p)&&!p.endsWith('link-results.json')).map(p=>read(rel(p))).join('\n');
   assert(!/[A-Z]:[\\/](?:Users|Program Files)/.test(prose),'machine path');
   assert(!/gh[pousr]_[A-Za-z0-9]{20,}/.test(prose),'credential-like string');
   assert(!/sk-[A-Za-z0-9_-]{30,}/.test(prose),'credential-like string');
   assert(!files.some(p=>/(?:config\.json|\.env|\.pem)$/i.test(p)),'private configuration');
+  const readme=read('README.md');
+  assert.deepEqual(readme.match(/^## .+$/gm),['## 结构'],'README stays focused on purpose and structure');
+  assert(readme.trim().endsWith('https://github.com/wuwangzhang1216/DirectorSKILL)。'),'README source ending');
 });
 console.log(JSON.stringify({status:'PASS',checks:checks.length,files:files.length,internalLinks,externalUrls:urls.size,details:checks},null,2));
 

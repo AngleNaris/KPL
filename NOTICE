@@ -3,7 +3,9 @@ Copyright 2026 KPL contributors.
 
 This repository is a reorganized and modified skill, not an upstream release.
 Modified files: SKILL.md and all files under references/.
-Modification date: 2026-10-22.
+Modification dates: 2026-10-22 and 2026-10-23.
+The lightweight creative-spec workflow and confirmation rules added on
+2026-10-23 are independently written for KPL's user requirements.
 
 video-prompting-skill
 Source: https://github.com/Square-Zero-Labs/video-prompting-skill

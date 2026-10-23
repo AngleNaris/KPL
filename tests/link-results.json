@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-10-22T09:49:33.584Z",
+  "checkedAt": "2026-10-23T07:06:00.452Z",
   "meaning": "Reachability only, not format/content/generation validation",
   "results": [
     {
@@ -49,6 +49,18 @@
       "status": 200,
       "ok": true,
       "finalUrl": "https://dreamina.capcut.com/seedance/how-to-use-seedance-2-5"
+    },
+    {
+      "url": "https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/productivity/grill-me/SKILL.md",
+      "status": 200,
+      "ok": true,
+      "finalUrl": "https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/productivity/grill-me/SKILL.md"
+    },
+    {
+      "url": "https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/productivity/grilling/SKILL.md",
+      "status": 200,
+      "ok": true,
+      "finalUrl": "https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/productivity/grilling/SKILL.md"
     },
     {
       "url": "https://github.com/MiniMax-AI/MiniMax-H3/blob/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing/references/base-en.txt",

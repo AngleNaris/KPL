@@ -4,11 +4,14 @@
 
 KPL 将全片段落、视觉主旨、调度、连续性和剪辑设计，与逐镜提示词编译分开处理；保留已确认的剧情、对白、时长和参考职责。视频格式适配仅包含 Seedance 2.5 与 MiniMax H3，图片格式适配为 OpenAI 官方 GPT Image 2.5 Sunburst/Flare。未指定模型时也可先完成通用草稿。
 
+多阶段创作以轻量规格组织，逐项澄清关键决定，先确认风格与资产，再规划分镜和视频模式；单条提示词与局部修订可直接进入精简流程。
+
 ## 结构
 
 ```text
 SKILL.md                       唯一入口（name: kpl）
 references/
+  spec-workflow.md             规格、逐问确认与变更影响
   directing.md                 通用导演策划
   video.md                     通用视频提示词
   image.md                     通用图片生成与编辑提示词
@@ -16,6 +19,7 @@ references/
     seedance-2.5.md             Seedance 2.5 格式适配
     minimax-h3.md               MiniMax H3 格式适配
     gpt-image-2.5.md            GPT Image 2.5 格式适配
+assets/creative-spec.md         单一创作规格模板
 docs/                          参考资料与说明
 tests/                         行为用例与文本试答
 scripts/validate.mjs            结构与格式检查

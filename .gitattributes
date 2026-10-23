@@ -1,2 +1,3 @@
 * text=auto eol=lf
 *.txt -text
+tests/spec-outputs/*.md -text whitespace=cr-at-eol

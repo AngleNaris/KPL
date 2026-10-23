@@ -1,0 +1,119 @@
+{
+  "date": "2026-10-23",
+  "method": "Two independent executors in fresh contexts; each read the skill and input requests, without rubric or prior responses",
+  "model": "Inherited session configuration; exact model revision not separately recorded",
+  "singleTurnCases": true,
+  "actualGeneration": false,
+  "rawResponsesEdited": false,
+  "skillFiles": [
+    {
+      "path": "SKILL.md",
+      "sha256": "93a14f6a450564ec10fbe743e43feb5c020ab841ebc1f279f0146eef6aba7d78"
+    },
+    {
+      "path": "references/spec-workflow.md",
+      "sha256": "b393b65e9614bee196f4d2e0ce9e78cfd862f04ae5cd21ec67b595327625e9d3"
+    },
+    {
+      "path": "references/directing.md",
+      "sha256": "a2dce21ea464243b49ef4417a6d83107e76dfeba57a972d65c47e524f1e2c2d6"
+    },
+    {
+      "path": "references/video.md",
+      "sha256": "7a3c7c09ad784764a081cdb50cf95b2b9de0fca89a5ca2110212db58538728e6"
+    },
+    {
+      "path": "references/image.md",
+      "sha256": "dbdf28c203b44e8da1f161659fd9d03565f53512fd9b058c7c2a83255316961a"
+    },
+    {
+      "path": "assets/creative-spec.md",
+      "sha256": "447f0d743963525bdec9e06b7831b916eb61eb1bc8947fb42a62466841db1f37"
+    }
+  ],
+  "executions": [
+    {
+      "group": "a",
+      "cases": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05"
+      ],
+      "readFiles": [
+        "SKILL.md",
+        "tests/spec-inputs.json",
+        "references/spec-workflow.md",
+        "references/image.md",
+        "references/directing.md",
+        "references/video.md"
+      ],
+      "outputs": [
+        {
+          "id": "S01",
+          "path": "tests/spec-outputs/S01.md",
+          "sha256": "994a912864cd0543d28b826ddf18a03c960023ca485f510b6cfb683b05ebd3f8"
+        },
+        {
+          "id": "S02",
+          "path": "tests/spec-outputs/S02.md",
+          "sha256": "b91f6ed71c132351641efab9e49dcd64661621670496bfba8cf372d1ddce6181"
+        },
+        {
+          "id": "S03",
+          "path": "tests/spec-outputs/S03.md",
+          "sha256": "e909a3576809ad8ebd83c6b32c24e477be2b6f37d28ae4f118621fda3ae2b168"
+        },
+        {
+          "id": "S04",
+          "path": "tests/spec-outputs/S04.md",
+          "sha256": "68f68665043e6793b30cb47389428c56b6888e6ba97710e6867f174b93b1b890"
+        },
+        {
+          "id": "S05",
+          "path": "tests/spec-outputs/S05.md",
+          "sha256": "8316a7e605c5f9577237383e93c80621c798daaf1406152a61ed07f7774e8e2a"
+        }
+      ]
+    },
+    {
+      "group": "b",
+      "cases": [
+        "S06",
+        "S07",
+        "S08",
+        "S09"
+      ],
+      "readFiles": [
+        "SKILL.md",
+        "tests/spec-inputs.json",
+        "references/video.md",
+        "references/spec-workflow.md",
+        "references/image.md"
+      ],
+      "outputs": [
+        {
+          "id": "S06",
+          "path": "tests/spec-outputs/S06.md",
+          "sha256": "d4e3d55a6b6ce87373c4a2b3c2a37e22a55d56b80cac324834b99d3cd2ace255"
+        },
+        {
+          "id": "S07",
+          "path": "tests/spec-outputs/S07.md",
+          "sha256": "028abd3f35aee9cf451e768412347a07990164dc81a614a3b65c26934727dfab"
+        },
+        {
+          "id": "S08",
+          "path": "tests/spec-outputs/S08.md",
+          "sha256": "3b59c918edc8e7d944e8ad49905a6eea230523893364610777ba3a6010d04149"
+        },
+        {
+          "id": "S09",
+          "path": "tests/spec-outputs/S09.md",
+          "sha256": "4f61f2851a60da3f9541ec8124dc17e315fd760deba713f015cc5c88ab0b0bbc"
+        }
+      ]
+    }
+  ]
+}
