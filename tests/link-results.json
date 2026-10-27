@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-10-23T07:06:00.452Z",
+  "checkedAt": "2026-10-27T01:36:58.187Z",
   "meaning": "Reachability only, not format/content/generation validation",
   "results": [
     {
@@ -28,93 +28,78 @@
     },
     {
       "url": "https://docs.byteplus.com/en/docs/ModelArk/2607688",
-      "status": 200,
-      "ok": true,
-      "finalUrl": "https://docs.byteplus.com/en/docs/modelark/seedance-2-5?redirect=1"
+      "ok": false,
+      "error": "TypeError: fetch failed"
     },
     {
       "url": "https://docs.byteplus.com/en/docs/ModelArk/2607689",
-      "status": 200,
-      "ok": true,
-      "finalUrl": "https://docs.byteplus.com/en/docs/modelark/seedance-2-5-prompt-guide?redirect=1"
+      "ok": false,
+      "error": "TypeError: fetch failed"
     },
     {
       "url": "https://docs.byteplus.com/en/docs/modelark/create-video-generation-task-api",
-      "status": 200,
-      "ok": true,
-      "finalUrl": "https://docs.byteplus.com/en/docs/modelark/create-video-generation-task-api"
+      "ok": false,
+      "error": "TypeError: fetch failed"
     },
     {
       "url": "https://dreamina.capcut.com/seedance/how-to-use-seedance-2-5",
-      "status": 200,
-      "ok": true,
-      "finalUrl": "https://dreamina.capcut.com/seedance/how-to-use-seedance-2-5"
+      "ok": false,
+      "error": "TypeError: fetch failed"
     },
     {
       "url": "https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/productivity/grill-me/SKILL.md",
-      "status": 200,
-      "ok": true,
-      "finalUrl": "https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/productivity/grill-me/SKILL.md"
+      "ok": false,
+      "error": "TypeError: fetch failed"
     },
     {
       "url": "https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/productivity/grilling/SKILL.md",
-      "status": 200,
-      "ok": true,
-      "finalUrl": "https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/productivity/grilling/SKILL.md"
+      "ok": false,
+      "error": "TypeError: fetch failed"
     },
     {
       "url": "https://github.com/MiniMax-AI/MiniMax-H3/blob/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing/references/base-en.txt",
-      "status": 200,
-      "ok": true,
-      "finalUrl": "https://github.com/MiniMax-AI/MiniMax-H3/blob/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing/references/base-en.txt"
+      "ok": false,
+      "error": "TypeError: fetch failed"
     },
     {
       "url": "https://github.com/MiniMax-AI/MiniMax-H3/blob/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing/references/ref-en.txt",
-      "status": 200,
-      "ok": true,
-      "finalUrl": "https://github.com/MiniMax-AI/MiniMax-H3/blob/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing/references/ref-en.txt"
+      "ok": false,
+      "error": "TypeError: fetch failed"
     },
     {
       "url": "https://github.com/MiniMax-AI/MiniMax-H3/blob/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing/SKILL.md",
-      "status": 200,
-      "ok": true,
-      "finalUrl": "https://github.com/MiniMax-AI/MiniMax-H3/blob/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing/SKILL.md"
+      "ok": false,
+      "error": "TypeError: fetch failed"
     },
     {
       "url": "https://github.com/MiniMax-AI/MiniMax-H3/tree/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing",
-      "status": 200,
-      "ok": true,
-      "finalUrl": "https://github.com/MiniMax-AI/MiniMax-H3/tree/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing"
+      "ok": false,
+      "error": "TypeError: fetch failed"
     },
     {
       "url": "https://github.com/openai/skills/tree/49f948faa9258a0c61caceaf225e179651397431/skills/.system/imagegen",
-      "status": 200,
-      "ok": true,
-      "finalUrl": "https://github.com/openai/skills/tree/49f948faa9258a0c61caceaf225e179651397431/skills/.system/imagegen"
+      "ok": false,
+      "error": "TypeError: fetch failed"
     },
     {
       "url": "https://github.com/Square-Zero-Labs/video-prompting-skill",
-      "status": 200,
-      "ok": true,
-      "finalUrl": "https://github.com/Square-Zero-Labs/video-prompting-skill"
+      "ok": false,
+      "error": "TypeError: fetch failed"
     },
     {
       "url": "https://github.com/Square-Zero-Labs/video-prompting-skill/tree/8d72999ebe8bde390a658d3f6f8a79558b73bd5c",
-      "status": 200,
-      "ok": true,
-      "finalUrl": "https://github.com/Square-Zero-Labs/video-prompting-skill/tree/8d72999ebe8bde390a658d3f6f8a79558b73bd5c"
+      "ok": false,
+      "error": "TypeError: fetch failed"
     },
     {
       "url": "https://github.com/wuwangzhang1216/DirectorSKILL",
-      "status": 200,
-      "ok": true,
-      "finalUrl": "https://github.com/wuwangzhang1216/DirectorSKILL"
+      "ok": false,
+      "error": "TypeError: fetch failed"
     },
     {
       "url": "https://github.com/wuwangzhang1216/DirectorSKILL/tree/c65ae0d14457053efb1e354c7e7f7e120d97fad1",
-      "status": 200,
-      "ok": true,
-      "finalUrl": "https://github.com/wuwangzhang1216/DirectorSKILL/tree/c65ae0d14457053efb1e354c7e7f7e120d97fad1"
+      "ok": false,
+      "error": "TypeError: fetch failed"
     },
     {
       "url": "https://seed.bytedance.com/en/blog/one-take-creation-flexible-referencing-introducing-seedance-2-5",

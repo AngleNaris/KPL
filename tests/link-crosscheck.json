@@ -1,0 +1,117 @@
+{
+  "checkedOn": "2026-10-27",
+  "meaning": "Cross-check of Node failures; does not replace raw HTTP results or verify API schemas.",
+  "results": [
+    {
+      "url": "https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/productivity/grill-me/SKILL.md",
+      "method": "GitHub connector",
+      "readable": true
+    },
+    {
+      "url": "https://github.com/mattpocock/skills/blob/5beb35b040e3de97e54fa9e386d7e42d15c295c2/skills/productivity/grilling/SKILL.md",
+      "method": "GitHub connector",
+      "readable": true
+    },
+    {
+      "url": "https://github.com/MiniMax-AI/MiniMax-H3/blob/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing/references/base-en.txt",
+      "method": "GitHub connector",
+      "readable": true
+    },
+    {
+      "url": "https://github.com/MiniMax-AI/MiniMax-H3/blob/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing/references/ref-en.txt",
+      "method": "GitHub connector",
+      "readable": true
+    },
+    {
+      "url": "https://github.com/MiniMax-AI/MiniMax-H3/blob/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing/SKILL.md",
+      "method": "GitHub connector",
+      "readable": true
+    },
+    {
+      "url": "https://github.com/MiniMax-AI/MiniMax-H3/tree/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing",
+      "method": "GitHub connector",
+      "readable": true
+    },
+    {
+      "url": "https://github.com/openai/skills/tree/49f948faa9258a0c61caceaf225e179651397431/skills/.system/imagegen",
+      "method": "GitHub connector",
+      "readable": true
+    },
+    {
+      "url": "https://github.com/Square-Zero-Labs/video-prompting-skill",
+      "method": "GitHub connector",
+      "readable": true
+    },
+    {
+      "url": "https://github.com/Square-Zero-Labs/video-prompting-skill/tree/8d72999ebe8bde390a658d3f6f8a79558b73bd5c",
+      "method": "GitHub connector",
+      "readable": true
+    },
+    {
+      "url": "https://github.com/wuwangzhang1216/DirectorSKILL",
+      "method": "GitHub connector",
+      "readable": true
+    },
+    {
+      "url": "https://github.com/wuwangzhang1216/DirectorSKILL/tree/c65ae0d14457053efb1e354c7e7f7e120d97fad1",
+      "method": "GitHub connector",
+      "readable": true
+    },
+    {
+      "url": "https://developers.openai.com/api/docs/guides/image-generation",
+      "method": "web reader",
+      "reachable": true,
+      "readable": true,
+      "note": "Document body returned; reachability check only."
+    },
+    {
+      "url": "https://developers.openai.com/api/docs/guides/image-prompting",
+      "method": "web reader",
+      "reachable": true,
+      "readable": true,
+      "note": "Document body returned; reachability check only."
+    },
+    {
+      "url": "https://developers.openai.com/api/reference/resources/images/methods/edit",
+      "method": "web reader",
+      "reachable": true,
+      "readable": true,
+      "note": "Document body returned; reachability check only."
+    },
+    {
+      "url": "https://developers.openai.com/api/reference/resources/images/methods/generate",
+      "method": "web reader",
+      "reachable": true,
+      "readable": true,
+      "note": "Document body returned; reachability check only."
+    },
+    {
+      "url": "https://docs.byteplus.com/en/docs/ModelArk/2607688",
+      "method": "web reader",
+      "reachable": true,
+      "readable": false,
+      "note": "Only JavaScript shell and document title available; full schema not verified."
+    },
+    {
+      "url": "https://docs.byteplus.com/en/docs/ModelArk/2607689",
+      "method": "web reader",
+      "reachable": true,
+      "readable": false,
+      "note": "Only JavaScript shell and document title available; full schema not verified."
+    },
+    {
+      "url": "https://docs.byteplus.com/en/docs/modelark/create-video-generation-task-api",
+      "method": "web reader",
+      "reachable": true,
+      "readable": false,
+      "note": "Only JavaScript shell and document title available; full schema not verified."
+    },
+    {
+      "url": "https://dreamina.capcut.com/seedance/how-to-use-seedance-2-5",
+      "method": "web reader",
+      "reachable": true,
+      "readable": true,
+      "note": "Document body returned; reachability check only."
+    }
+  ]
+}

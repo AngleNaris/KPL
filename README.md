@@ -12,6 +12,7 @@ KPL 将全片段落、视觉主旨、调度、连续性和剪辑设计，与逐�
 SKILL.md                       唯一入口（name: kpl）
 references/
   spec-workflow.md             规格、逐问确认与变更影响
+  creative-review.md           镜头功能、运动设计与分层验收
   directing.md                 通用导演策划
   video.md                     通用视频提示词
   image.md                     通用图片生成与编辑提示词

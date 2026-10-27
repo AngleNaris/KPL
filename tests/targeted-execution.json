@@ -1,0 +1,130 @@
+{
+  "date": "2026-10-27",
+  "method": "two-fresh-context-text-executions",
+  "preciseModelRevision": null,
+  "configuration": "Inherited default; no per-agent model override. Exact revision unavailable.",
+  "actualGeneration": false,
+  "rawResponsesEdited": false,
+  "scope": "Four cases per fresh executor context; no rubric, previous outputs or author conclusions supplied. Not independent contexts per case or a statistical success-rate study.",
+  "skillFiles": [
+    {
+      "path": "SKILL.md",
+      "sha256": "04b16fc5037edb23e0693dc98f36b78be71c5a1d3cd6008817f1ef6328594e26"
+    },
+    {
+      "path": "references/creative-review.md",
+      "sha256": "6dabca7adae8b36cabbc3a8dff07607ab646fbb05c15524f4db13c47f813a2e7"
+    },
+    {
+      "path": "references/directing.md",
+      "sha256": "21df21acb2e713dcdcceef1785ef80f6b28926d33057fb58db4af1d81eaeefcd"
+    },
+    {
+      "path": "references/formats/minimax-h3.md",
+      "sha256": "88307b31841f4d027f99eaed0389a0fb1448518c0058800fceac0924300bb478"
+    },
+    {
+      "path": "references/formats/seedance-2.5.md",
+      "sha256": "17a24328d2cac2ef2222232eebf6cf2d0b140753d1a9bbede8553e8fa124a396"
+    },
+    {
+      "path": "references/image.md",
+      "sha256": "525f0d3ae0f4576bdafce83a5c5da37415a83d06bb41271316e30d833284d653"
+    },
+    {
+      "path": "references/spec-workflow.md",
+      "sha256": "6cec2b6421a5ea6b01ff331705a22a846002be280af0324d637d2edad89f3dac"
+    },
+    {
+      "path": "references/video.md",
+      "sha256": "3134b18a6176beb217a4cf9f8e46094bf6193fc9b63abb90ee46f3c472d8b400"
+    }
+  ],
+  "executions": [
+    {
+      "executor": "A",
+      "cases": [
+        "R01",
+        "R02",
+        "R03",
+        "R04"
+      ],
+      "readFiles": [
+        "SKILL.md",
+        "references/video.md",
+        "references/formats/seedance-2.5.md",
+        "references/formats/minimax-h3.md",
+        "references/image.md"
+      ],
+      "otherInputs": [
+        "tests/targeted-inputs.json"
+      ],
+      "inputScope": "The complete input JSON was visible; only the assigned four cases were executed.",
+      "outputs": [
+        {
+          "id": "R01",
+          "path": "tests/targeted-outputs/R01.md",
+          "sha256": "8e3a9214693ad3449ea0722ca0d94e11e52b429ece8895651e3cc5fcde5d5a86"
+        },
+        {
+          "id": "R02",
+          "path": "tests/targeted-outputs/R02.md",
+          "sha256": "cd95f7d32448c7de68d7ed6ca5548c8af690a27348cf21dbe24230029ffe3f23"
+        },
+        {
+          "id": "R03",
+          "path": "tests/targeted-outputs/R03.md",
+          "sha256": "156a0930fbca9a04f7d5ef3038e2b2dfe63bdcb0aaabd2376ed3e0933cc26632"
+        },
+        {
+          "id": "R04",
+          "path": "tests/targeted-outputs/R04.md",
+          "sha256": "a8ff7802fb0c3051777db411d5d4469d41756b683fe47cb76b410be232e0a06c"
+        }
+      ]
+    },
+    {
+      "executor": "B",
+      "cases": [
+        "R05",
+        "R06",
+        "R07",
+        "R08"
+      ],
+      "readFiles": [
+        "SKILL.md",
+        "references/video.md",
+        "references/directing.md",
+        "references/creative-review.md",
+        "references/image.md",
+        "references/spec-workflow.md"
+      ],
+      "otherInputs": [
+        "tests/targeted-inputs.json"
+      ],
+      "inputScope": "The complete input JSON was visible; only the assigned four cases were executed.",
+      "outputs": [
+        {
+          "id": "R05",
+          "path": "tests/targeted-outputs/R05.md",
+          "sha256": "1de2117f361a7cac0b36f8014c4bbec06081606b778a66c0fc9d346f050557c9"
+        },
+        {
+          "id": "R06",
+          "path": "tests/targeted-outputs/R06.md",
+          "sha256": "5e1a96e44c19d5010c18816843e0675cf249577357972e7bc63fb88d624b6efb"
+        },
+        {
+          "id": "R07",
+          "path": "tests/targeted-outputs/R07.md",
+          "sha256": "2b2db20700bd81e756377c4f5e3d49a623ab38ad83b2558b37bad4130eebf629"
+        },
+        {
+          "id": "R08",
+          "path": "tests/targeted-outputs/R08.md",
+          "sha256": "d98e2876a9486b888b1475e36ce0e6d9ff9a30a2eb0eee093f83e2b1bd0f7489"
+        }
+      ]
+    }
+  ]
+}

@@ -12,12 +12,13 @@ const walk = dir => fs.readdirSync(dir,{withFileTypes:true}).flatMap(e =>
   e.name === '.git' || e.name === 'node_modules' ? [] :
     e.isDirectory() ? walk(path.join(dir,e.name)) : [path.join(dir,e.name)]);
 const checks=[];
+const historicalSkillChanges=[];
 const check = (name,fn) => {fn(); checks.push(name);};
 
 const files=walk(root);
 check('single entry and required modules',()=>{
   assert.deepEqual(files.filter(p=>path.basename(p)==='SKILL.md').map(rel),['SKILL.md']);
-  for(const p of ['README.md','NOTICE','LICENSE','references/spec-workflow.md','assets/creative-spec.md','references/directing.md','references/video.md','references/image.md','docs/sources.json','tests/behavior.md','tests/spec-execution.json','tests/spec-review.json']) assert(fs.statSync(path.join(root,p)).isFile(),p);
+  for(const p of ['README.md','NOTICE','LICENSE','references/spec-workflow.md','references/creative-review.md','assets/creative-spec.md','references/directing.md','references/video.md','references/image.md','docs/sources.json','tests/behavior.md','tests/spec-execution.json','tests/spec-review.json','tests/targeted-execution.json','tests/targeted-review.json']) assert(fs.statSync(path.join(root,p)).isFile(),p);
   assert.deepEqual(fs.readdirSync(path.join(root,'references/formats')).sort(),['gpt-image-2.5.md','minimax-h3.md','seedance-2.5.md']);
 });
 check('frontmatter (supported flat YAML subset)',()=>{
@@ -40,7 +41,7 @@ check('UTF-8, relative link containment, citation targets, fenced JSON',()=>{
       const [p,anchor]=target.split('#');const abs=path.resolve(path.dirname(file),decodeURIComponent(p||'.'));
       assert(abs===root||abs.startsWith(root+path.sep),`link escapes repository: ${target}`);
       assert(fs.existsSync(abs),`missing target: ${rel(file)} -> ${target}`);internalLinks++;
-      if(anchor){const headings=fs.readFileSync(abs,'utf8').split(/\r?\n/).filter(l=>/^#+ /.test(l));assert(headings.length,`no heading for anchor: ${target}`);}
+      if(anchor){const headings=fs.readFileSync(abs,'utf8').split(/\r?\n/).filter(l=>/^#+ /.test(l));const slugs=headings.map(l=>l.replace(/^#+ /,'').trim().toLowerCase().replace(/[^\p{L}\p{N}_\s-]/gu,'').replace(/\s/g,'-'));assert(slugs.includes(decodeURIComponent(anchor)),`missing heading anchor: ${target}`);}
     }
     for(const m of s.matchAll(/```json\r?\n([\s\S]*?)\r?\n```/g))JSON.parse(m[1]);
   }
@@ -65,7 +66,7 @@ function validateH3(s,expected){
   assert(s.includes('[Shot 1]'));assert(!/\[Shot 1\]\s*At \d/.test(s),'first shot must not have cut timestamp');
   if(expected===refFields){
     assert(/summary:\s*\[(?:[a-z ]+)(?: \+ [a-z ]+)*\]/.test(s));
-    assert(s.includes('attribute_transfer -'));
+    assert(/\battribute_transfer\b/.test(s),'expected style-transfer relationship token');
   }
 }
 check('saved behavior output inventory and H3 syntax (not semantic grading)',()=>{
@@ -81,6 +82,8 @@ check('format validator rejects invalid field order, duplicates and first-shot t
   assert.throws(()=>validateH3(s.replace('overall_soundscape:','non_diegetic_music:'),baseFields));
   assert.throws(()=>validateH3(s+'\noverall_soundscape: duplicate',baseFields));
   assert.throws(()=>validateH3(s.replace('[Shot 1]','[Shot 1] At 00:00.000,'),baseFields));
+  const ref=read('tests/outputs/B10.md');
+  assert.throws(()=>validateH3(ref.replaceAll('attribute_transfer','unknown_relationship'),refFields));
 });
 check('creative-spec template and independent scenario schema',()=>{
   const template=read('assets/creative-spec.md');
@@ -100,7 +103,10 @@ check('independent evidence consistency (not automated semantic grading)',()=>{
     const execution=JSON.parse(read('tests/spec-execution.json'));
     assert.equal(execution.actualGeneration,false);assert.equal(execution.rawResponsesEdited,false);
     assert.equal(execution.executions.length,2);
-    for(const x of execution.skillFiles)assert.equal(digest(x.path),x.sha256,'evaluated skill changed: '+x.path);
+    for(const x of execution.skillFiles){
+      assert(/^[0-9a-f]{64}$/.test(x.sha256),'historical skill digest: '+x.path);
+      if(digest(x.path)!==x.sha256)historicalSkillChanges.push(x.path);
+    }
     assert.deepEqual(execution.executions.flatMap(x=>x.cases),rubric.cases.map(x=>x.id));
     for(const run of execution.executions){
       assert(run.readFiles.includes('SKILL.md'));
@@ -122,7 +128,8 @@ check('independent evidence consistency (not automated semantic grading)',()=>{
 });
 check('publication hygiene',()=>{
   const prose=files.filter(p=>/\.(md|json)$/.test(p)&&!p.endsWith('link-results.json')).map(p=>read(rel(p))).join('\n');
-  assert(!/[A-Z]:[\\/](?:Users|Program Files)/.test(prose),'machine path');
+  assert(!/\b[A-Z]:[\\/]/i.test(prose),'machine path');
+  assert(!/\b(?:rollout-\d{4}-\d{2}-\d{2}T|source_thread_id|transcript_evidence)\b/.test(prose),'private conversation metadata');
   assert(!/gh[pousr]_[A-Za-z0-9]{20,}/.test(prose),'credential-like string');
   assert(!/sk-[A-Za-z0-9_-]{30,}/.test(prose),'credential-like string');
   assert(!files.some(p=>/(?:config\.json|\.env|\.pem)$/i.test(p)),'private configuration');
@@ -130,7 +137,40 @@ check('publication hygiene',()=>{
   assert.deepEqual(readme.match(/^## .+$/gm),['## 结构'],'README stays focused on purpose and structure');
   assert(readme.trim().endsWith('https://github.com/wuwangzhang1216/DirectorSKILL)。'),'README source ending');
 });
-console.log(JSON.stringify({status:'PASS',checks:checks.length,files:files.length,internalLinks,externalUrls:urls.size,details:checks},null,2));
+check('targeted text execution and independent review integrity (not semantic scoring)',()=>{
+  const suite=JSON.parse(read('tests/targeted-inputs.json'));
+  const rubric=JSON.parse(read('tests/targeted-rubric.json'));
+  const execution=JSON.parse(read('tests/targeted-execution.json'));
+  const review=JSON.parse(read('tests/targeted-review.json'));
+  const ids=Array.from({length:8},(_,i)=>`R${String(i+1).padStart(2,'0')}`);
+  assert.equal(suite.fictional,true);
+  assert.deepEqual(suite.cases.map(c=>c.id),ids);
+  assert.deepEqual(rubric.cases.map(c=>c.id),ids);
+  assert(suite.cases.every(c=>typeof c.request==='string'&&c.request.length>30));
+  assert(rubric.cases.every(c=>c.criteria.length>=3&&c.criteria.every(x=>typeof x==='string'&&x.length>10)));
+  assert.equal(execution.actualGeneration,false);assert.equal(execution.rawResponsesEdited,false);
+  assert.equal(execution.executions.length,2);
+  assert.deepEqual(execution.executions.flatMap(x=>x.cases),ids);
+  for(const f of execution.skillFiles)assert.equal(digest(f.path),f.sha256,'current evaluated skill changed: '+f.path);
+  for(const run of execution.executions){
+    assert(run.readFiles.includes('SKILL.md'));
+    assert(!run.readFiles.some(p=>/rubric|outputs|review\.json/.test(p)),'executor read grading material');
+    assert.deepEqual(run.outputs.map(x=>x.id),run.cases);
+    for(const f of run.outputs){assert.equal(digest(f.path),f.sha256);assert(read(f.path).trim().length>60);}
+  }
+  assert.equal(review.method,'independent-text-review');assert.equal(review.actualGeneration,false);
+  assert.deepEqual(review.cases.map(c=>c.id),ids);
+  for(const c of review.cases){
+    assert.equal(c.criteria.length,rubric.cases.find(r=>r.id===c.id).criteria.length,c.id);
+    assert.equal(c.outputSha256,digest(c.output),c.id+' raw output changed');
+    assert(c.criteria.every(x=>typeof x.pass==='boolean'&&typeof x.evidence==='string'&&x.evidence.length>10));
+    assert.equal(c.pass,c.criteria.every(x=>x.pass),c.id);
+  }
+  assert.equal(review.passed,review.cases.flatMap(c=>c.criteria).filter(c=>c.pass).length);
+  assert.equal(review.cases.filter(c=>c.pass).length,8,'independent review found failures');
+  validateH3(read('tests/targeted-outputs/R02.md'),refFields);
+});
+console.log(JSON.stringify({status:'PASS',meaning:'Structure, formats and historical evidence integrity only; not current semantic or video acceptance',checks:checks.length,files:files.length,internalLinks,externalUrls:urls.size,details:checks,historicalEvaluation:{appliesToCurrentSkill:historicalSkillChanges.length===0,changedFiles:historicalSkillChanges}},null,2));
 
 if(process.argv.includes('--links')){
   const queue=[...urls].sort();const results=[];
