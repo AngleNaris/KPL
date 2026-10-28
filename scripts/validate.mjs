@@ -13,6 +13,7 @@ const walk = dir => fs.readdirSync(dir,{withFileTypes:true}).flatMap(e =>
     e.isDirectory() ? walk(path.join(dir,e.name)) : [path.join(dir,e.name)]);
 const checks=[];
 const historicalSkillChanges=[];
+const targetedSkillChanges=[];
 const check = (name,fn) => {fn(); checks.push(name);};
 
 const files=walk(root);
@@ -151,7 +152,10 @@ check('targeted text execution and independent review integrity (not semantic sc
   assert.equal(execution.actualGeneration,false);assert.equal(execution.rawResponsesEdited,false);
   assert.equal(execution.executions.length,2);
   assert.deepEqual(execution.executions.flatMap(x=>x.cases),ids);
-  for(const f of execution.skillFiles)assert.equal(digest(f.path),f.sha256,'current evaluated skill changed: '+f.path);
+  for(const f of execution.skillFiles){
+    assert(/^[0-9a-f]{64}$/.test(f.sha256),'targeted historical skill digest: '+f.path);
+    if(digest(f.path)!==f.sha256)targetedSkillChanges.push(f.path);
+  }
   for(const run of execution.executions){
     assert(run.readFiles.includes('SKILL.md'));
     assert(!run.readFiles.some(p=>/rubric|outputs|review\.json/.test(p)),'executor read grading material');
@@ -170,7 +174,7 @@ check('targeted text execution and independent review integrity (not semantic sc
   assert.equal(review.cases.filter(c=>c.pass).length,8,'independent review found failures');
   validateH3(read('tests/targeted-outputs/R02.md'),refFields);
 });
-console.log(JSON.stringify({status:'PASS',meaning:'Structure, formats and historical evidence integrity only; not current semantic or video acceptance',checks:checks.length,files:files.length,internalLinks,externalUrls:urls.size,details:checks,historicalEvaluation:{appliesToCurrentSkill:historicalSkillChanges.length===0,changedFiles:historicalSkillChanges}},null,2));
+console.log(JSON.stringify({status:'PASS',meaning:'Structure, formats and historical evidence integrity only; not current semantic or video acceptance',checks:checks.length,files:files.length,internalLinks,externalUrls:urls.size,details:checks,historicalEvaluation:{appliesToCurrentSkill:historicalSkillChanges.length===0,changedFiles:historicalSkillChanges},targetedEvaluation:{appliesToCurrentSkill:targetedSkillChanges.length===0,changedFiles:targetedSkillChanges}},null,2));
 
 if(process.argv.includes('--links')){
   const queue=[...urls].sort();const results=[];

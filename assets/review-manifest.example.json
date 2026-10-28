@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "time_unit": "seconds",
+  "shots": [
+    {
+      "id": "S001",
+      "section": "第一段",
+      "media": "frames/S001.png",
+      "duration": 1.2,
+      "timeline_start": 0,
+      "version": "已选图片版本",
+      "planned_action": "此处填写实际镜头的计划动作"
+    },
+    {
+      "id": "S002",
+      "section": "第一段",
+      "media": "clips/S002.mp4",
+      "in": 0.25,
+      "out": 1.75,
+      "duration": 1.5,
+      "timeline_start": 1.2,
+      "version": "已选视频版本"
+    }
+  ]
+}

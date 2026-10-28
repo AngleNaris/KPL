@@ -1,6 +1,126 @@
 # 轻量规格流程与逐问澄清
 
+涉及项目文件时使用 [项目目录与版本](project-structure.md) 的单一规格、路径和迁移约定；已有项目不自动迁移。
+
+镜头时长、动作分段、采用窗、切点及采样间隔用秒描述，用户报告先给计划秒数；输出帧率单独确认。旧材料只记录帧数时先核对原始帧率和时间基，再只读换算并保留来源；不改写原项目或把帧数当新的创作单位。技术换算需记录实际秒数与误差，偏差处理未获具体授权时暂停依赖它的输出。
+
 2026-10-23，按用户的创作流程需求独立编写。先读 [入口](../SKILL.md)；本文件只在多阶段、多镜或确认依赖需要管理时加载。
+
+## 执行入口与七个可折叠阶段
+
+把用户当前指令、已有素材与约束作为起点。多镜视频按下表建立必要依赖；短片可以把多行合并到同一次工作或同一份文档，但每个相关检查仍有结论。阶段名不决定必须生成新文件；已有有效产出可直接复用。每次只执行当前授权内、依赖已满足的一小项，再验证实际输出、更新同一规格，并决定下一项。
+
+| 阶段 | 输入 → 产出 | 检查与继续条件 | 有问题回到 |
+|---|---|---|---|
+| 创作需求 `brief` | 用户原话、资料 → 有来源的需求 ID、范围、保留项及验收条件 | 对照原话核对遗漏、矛盾、未授权新增；不明确项立即询问 | 原始需求；按相关性合并简短问题，暂停依赖答案的部分 |
+| 段落节奏 `rhythm` | 需求、可用音乐／时长 → 段落目标及时间或节奏依据 | 已有时间约束不冲突；未听见的音乐不虚构节拍 | 需求或音乐依据 |
+| 镜头组 `shot_group` | 段落及资产 → 组内信息、动作阶段、组间切换目的 | 有功能与时间预算；连续覆盖和蒙太奇按各自意图区分 | 段落或本组调度 |
+| 单镜规格 `shot_spec` | 组设计及确认边界 → 镜头 ID、时长、起态→变化→终态、构图/运动、参考职责 | 对照需求、相邻接点和入片时窗；未确认的变化不算批准 | 受影响镜头或镜头组 |
+| 素材与生成准备 `asset_prep` | 本镜规格、真实资产与平台能力 → 可核对的素材版本、模式、绑定及生成准备 | 核实当前参考的实际像素与职责，检查输入模式/授权；产生图片后按 [图片自检](creative-review.md) 查看真实输出 | 相关素材、参考选择或单镜规格 |
+| 小样逐镜 `sample_review` | 授权范围内生成的实际小样 → 分镜、像素/动态及技术记录 | 比较实际版本与规格；正常速度查看完整运动，需要声音时结合实际声音，缺能力或证据则未验证 | 相关片段、首态、模式或局部选段 |
+| 连剪成片 `edit_review` | 通过或带明确待决的小样及剪辑意图 → 真实版本的连续看片记录 | 原速检查镜内动作、接点、节奏、声音/口型及必要文字；只看静帧不算动态通过 | 相关镜头、接点或剪辑，不自动全片重做 |
+
+### 每次恢复与选择下一项
+
+1. 阅读当前用户指令、唯一规格、真实文件或服务状态、已有确认和待办；按实际项目定位素材，不把提示词或目录名当现成文件。对仍运行/不确定的任务先查原任务 ID、结果与现有文件，不自动重发。旧规格没有结构化状态时先照原格式读取；不静默迁移或覆盖。
+2. 将需要实现的用户要求标为稳定 ID，记可核对的来源位置、确认状态及范围；把任务输入/输出、需求、依赖和实际版本连起来。格式与字段见 [规格模板](../assets/creative-spec.md)。记录适用性及“不适用”的具体理由，缺证据记未验证，不能用默认值伪造通过。
+3. 检查当前可用的读文档、看图片像素、原速看视频/听音频、生成及版本查询能力。缺哪项只阻塞对应的验收或依赖它的操作；继续无关文本工作。不要假装生成器支持某模式，不因没有能力擅自安装、购买或上传。
+4. 可选运行 `python <KPL目录>/scripts/kpl_check.py <项目>/creative-spec.md`，读取 `next_candidates`、阻塞原因、版本和 `trace_checks_required`。脚本只检查显式结构、哈希、片段与依赖，候选并非授权；它**不会验证实际观看、语义或视觉正确性**。使用任何先前的审查记录前核验工具调用／可追溯记录；不可核验就重新打开当前文件，不能用记录里的自述代替。
+5. 在依赖与权限满足后选第一项合适任务：已存在的输出先对照当前版本检查，不自动重生；确无输出才按已授权范围执行。执行后读取真实返回和产物，按 [自检](creative-review.md) 核对，记录需求 ID、文件哈希/版本、范围、工具记录、具体观察、结论与问题。之后再次检查受影响状态；局部失败只修相关项。
+6. 暂停而不是猜测：关键输入/确认缺失、能力不足、结果不确定、需改用户锁定的事件/时长，或超出本次授权的生成/费用。默认每个产物最多初次尝试加两次有针对性的修订；用户已有预算优先。每次先指出具体失败机制并检查已有任务，反复无改进或预算耗尽就停止，保留最佳版本和证据并请求必要决定；不无限重试或全片重生。
+
+文件状态、生成任务成功、技术检查、创作设计、真实图片与真实动态是不同层次。完整文件或 `done` 不能单独使下游验收通过；实际检查不可得时只交付已完成部分，并说明受阻的层级和下一步。
+
+### 项目审查轮次：固定顺序和逐步报告
+
+接到“检查此项目”等完整项目审查请求时，第 1 阶段开始前在本规格或本轮审查记录中建立/恢复完整的 `review_round`，并依次执行 [五阶段审查](creative-review.md#项目审查固定五步逐步报告)：`global → directing → prompts → assets → deliverables`。七个制作阶段仍表示产出依赖；五个审查阶段表示本次检查顺序，二者共用需求、产物、任务与版本，不重复建立创作规格。每阶段检查后向用户发一条简短报告，立即把本阶段状态、证据、问题、报告及版本写回同一记录，运行 `kpl_check.py --review` 取得当前 `basis`，写入并重跑；核对该步记录及 `next_stage` 后才开始下一阶段。不能等五阶段结束再追溯填状态。可批量预读。纯审查不改项目；如果项目只读或未获写入授权，在当前任务允许写入的工作区保留一份审查记录，引用原规格和实际文件，不迁移或覆盖原项目。报告及检查证据是审查工件，不是第二份创作规格。没有写入或脚本执行能力时明确报告机器状态/校验受阻，不声称此机制已完成。
+
+找不到明确的分辨率、帧率、画幅比例，或任何相关缺项、冲突、模糊指代、未决创作意图时，立即向用户提出具体问题；先查已有明确答案，同组可合并问并给建议，只有明确回答或具体授权 Agent 决定才能确认。记录 `questions` 的问题 ID、主题、受影响阶段、原问题、状态及回答来源；答案变化使相关阶段基准和其依赖待复核。等待时不作默认假设；相关阶段只能报告阻塞或未验证，真正独立的检查可以继续。各阶段报告是工作进度，只有发生实际疑点才需要用户回答；默认无需每阶段人工审批。
+
+机器辅助示例：把下面对象放入已有 `kpl-state`，复用同块的 `requirements` 和 `artifacts`；五步必须齐全且顺序固定。只有示例状态，没有检查或报告被虚构：
+
+```json
+{"review_round": {
+  "id": "REV1", "mode": "review", "scope": "本次实际审查范围",
+  "settings": {}, "questions": [],
+  "stages": [
+    {"id": "global", "status": "pending", "inputs": [], "requirements": [], "checks": [], "evidence": []},
+    {"id": "directing", "status": "pending", "inputs": [], "requirements": [], "checks": [], "evidence": []},
+    {"id": "prompts", "status": "pending", "inputs": [], "requirements": [], "checks": [], "evidence": []},
+    {"id": "assets", "status": "pending", "inputs": [], "requirements": [], "checks": [], "evidence": []},
+    {"id": "deliverables", "status": "pending", "inputs": [], "requirements": [], "checks": [], "evidence": []}
+  ]
+}}
+```
+
+`settings` 中的 `resolution`、`fps`、`aspect_ratio` 分别记录 `{"value":"实际确定值","source":"实际确认或具体授权来源","authority":"confirmed"}`；用户明确委托该项由 Agent 决定时可用 `delegated`，来源必须指向该项具体授权。缺项不要填猜测值，应为每个主题登记 `{"id":"Q1","topic":"fps","question":"具体问题","stages":["global","directing"],"status":"open"}` 并实际问用户；收到答复后记 `status:answered`、`answer` 和 `answer_source`，将真实结论写入相应设置或规格并复查受影响结果。`questions` 的其他主题可记人物、动作、切点及版本等；同组问题可以同一条消息合并发送。脚本无法证明问题已送达或回答来源真实，仍需核验实际会话记录。
+
+每个阶段的 `status` 可为 `pending/running/passed/failed/blocked/unverified`。列出真实 `inputs`、相关需求 ID、`checks`（每项 `name/result/observation`，结果 `checked/issue/missing/not_applicable`，不适用须有 `reason`；`missing` 须有对应 `question_id`），与 `evidence`（实际 `artifact/sha256/method/trace/observation`；原话在会话中可用 `method:read_user_message` 和真实 trace）。`failed` 也要有实际证据和至少一项 `issue`，不能用空泛结论冒充检查；资料缺到无法判断时记 `blocked/unverified`。只对当前读到的文件使用 `read_text`，真实看过图片才记 `view_image`；脚本不能核实看图或语义。导演分镜文档、视频提示词文档、项目交付文档分别以 `role:shot_design/video_prompt/deliverable` 标在实际 `artifacts`；图片用 `kind:image` 或 `reference_image`。缺资料不能填成不适用。
+
+多镜总览实际打开后可在本轮 `evidence` 登记 `method:view_board`：`artifact` 和 `sha256` 指向实际查看的总览页，`board_index` 和 `board_index_sha256` 指向该页同目录的 `review_boards.py` 索引，`trace/observation` 记录真实打开与可见范围；总览页、索引和相关原图均须登记为现有 `artifacts`，相关原图 ID 列入该阶段 `inputs`。校验器比对页面、源路径及哈希并返回 `overview_source_coverage`，但不能验证真实打开或视觉判断；总览单独覆盖的图片细节仍未验证，不为取得 `passed` 自动逐张打开所有原图。发现疑点或任务确需不可辨认的细节时，再记理由并实际回看相应原图。索引的清单/规格和其他依赖还须另运行 `review_boards.py verify`，不把局部映射检查当完整新鲜度验证。
+
+完成检查后，`summary` 必须含 `conclusion/finding/impact/coverage/next_step` 五段短文本；将它们写入本阶段实际报告文件，将该文件按 `kind:document` 登记为 artifact，并在 `report` 记 `artifact` 与真实 `sha256`。`delivery` 填 `generated_only`，或在实际发给用户后填 `claimed_user_visible` 并记可查的 `delivery_trace`；脚本只报告送达未确认，不能凭作者填写冒充送达。第 5 阶段还要把本阶段报告的实际 `read_text` 证据写进 `evidence`。对每个阶段先填好实际检查、报告和结论，运行下面的命令取得该阶段 `basis`，再记入该阶段并重跑；不要把示例当真实证据。受阻/未验证需 `reason`，严重上游问题用 `blocks` 指出受影响的后续阶段。
+
+```sh
+python "<KPL目录>/scripts/kpl_check.py" "<审查记录或现有规格.md>" --review
+```
+
+看 `review_round.next_stage` 和各阶段 `action`：缺报告先补报告，中断恢复先读真实记录与文件，不能重报通过或重复做已有工作。`recorded_pass` 仅说明记录形状和版本一致，仍需核验真实读取/观看和送达；`recorded_unverified`、`recorded_blocked`、`recorded_failed` 均不是通过。旧规格无审查块仍可只读打开；在项目审查中 `--review` 明示缺少轮次，不会把空状态当通过。上游输入、原始要求、明确回答、报告或检查内容变化时，其基准和相关下游基准失效；先局部复核，不重做无关制作任务。
+
+### 可选状态块与最小调用
+
+启用辅助检查时，新标准项目将等价的 JSON 对象放在 `.kpl/state/project-state.json`，绑定用户区唯一规格及其哈希；旧规格可继续使用其 `kpl-state` 块，无需迁移。以下是**未执行的虚构起点**：只有一项镜头文档任务；项目可以按需要继续加任务，不需要为每个阶段各造一个文件。`source` 应换成可定位的真实用户消息或素材位置；`null` 表示文件尚未登记版本。
+
+```kpl-state
+{
+  "version": 1,
+  "requirements": [{"id": "R1", "text": "S01 时长两秒", "source": "用户消息的实际位置", "constraints": {"duration_seconds": 2}}],
+  "artifacts": [{"id": "D1", "kind": "document", "path": "shot.md", "sha256": null}],
+  "source_audits": [],
+  "tasks": [{"id": "T1", "phase": "shot_spec", "operation": "write", "action": "编写并检查 S01", "status": "pending", "depends_on": [], "requirements": ["R1"], "inputs": [], "outputs": ["D1"], "shots": ["S01"], "required_reviews": ["document"], "claims": [], "reviews": []}],
+  "cuts": [],
+  "issues": []
+}
+```
+
+将 `<KPL目录>` 换成当前加载技能的实际目录，项目路径换成真实位置：
+
+```sh
+python "<KPL目录>/scripts/kpl_check.py" "<项目>/creative-spec.md"
+python "<KPL目录>/scripts/kpl_check.py" --hash "<项目>/shot.md"
+```
+
+第一条只读检查并给出每项 `basis` 和候选动作；第二条计算实际文件 SHA256。Agent 创建并读回 `shot.md` 后，把真实哈希填入 `D1`，把逐需求检查写入 T1 的 `claims`：例如 `{"requirement":"R1","artifact":"D1","excerpt":"文件中实际存在的片段","values":{"duration_seconds":2}}`。再次运行检查获得当前 `basis`，再在 T1 的 `reviews` 追加本次真实记录：
+
+```json
+{"id":"V1","kind":"document","decision":"passed","basis":"本次检查返回的实际basis","evidence":[{"artifact":"D1","sha256":"真实文件哈希","method":"read_text","trace":"可追溯的实际读取调用或记录","observation":"实际读到的范围与对照结果"}]}
+```
+
+以上值只是说明字段，不能原样冒充证据。`claims` 必须先于取得 `basis` 更新；状态改为 `done` 后再运行检查。`recorded_pass` 只表示记录结构和版本匹配，脚本一律返回 `trace_verified_by_script: false`；Agent 在继续前还须核验原始工具记录、内容和结论，记录不可取得时重新检查。脚本不从摘录自动理解剧情，`values` 是检查者从文档提取的值；它能发现显式不一致，不能保证摘录覆盖了原文语义。
+
+字段约定：
+
+- `requirements` 保存 `id/text/source`，可选 `constraints` 对象；`applicable:false` 须有 `reason`。每项适用需求应被相关任务引用。`artifacts` 保存 `id/kind/path/sha256`，`kind` 可用 `document`、`image`、`reference_image`、`video` 等；路径默认相对规格目录。引用经授权的外部素材时，可显式加 `--allow-root "<素材所在目录>"`，辅助脚本只读取指定范围，不复制素材。
+- **需求覆盖必须直接回查原始用户要求**：先独立读取原话，再把其中每项约束与规格和产物逐条比对。若原始要求是实际 UTF-8 文件，可在绑定该输入时标 `role:user_source`，并用 `source_audits` 记录 `id/source_artifact/tasks/trace/items`；每个 `items` 含独立提取的 `id/excerpt/requirements`。例如原文有“禁止水印”而规格只有“单张图片”，即使产物符合错误规格，该原文条目也必须标为未映射并阻断相关需求覆盖验收。原文只存在于会话或不是 UTF-8 文件时，由 Agent 实际读取可追溯原文并在同一规格记来源、映射和检查证据，不伪造文件。
+- `source_audits` 只核对检查者**已经列出**的片段是否确实存在、是否映射到实际任务与需求；它不能自动找出所有遗漏，也不能证明映射的语义正确。`trace` 仍须核对真实读取记录。审查者必须重新看完整原始要求，不能只检查自己总结的规格；不适用的原文条目须写 `applicable:false` 与具体 `reason`。
+- 一个文件原文的 `source_audits` 条目形如 `{"id":"SA1","source_artifact":"BRIEF","tasks":["T1"],"trace":"真实原文读取记录","items":[{"id":"U1","excerpt":"禁止水印","requirements":["R1"]}]}`；`BRIEF` 必须是 T1 的实际输入文件，摘录、R1 和 trace 都要换成本次真实内容。
+- `tasks` 包含 `id/phase/operation/action/status/depends_on/requirements/inputs/outputs/required_reviews`；`operation` 明确用 `write/generate/review/edit/other`，任何模型生成都标为 `generate`。状态可为 `pending/running/done/paused`；`running` 保留 `job_ref`，恢复先查原任务，不因没有结果就重发。`shots` 用于标出接点和变更范围。`required_reviews` 按需要选 `technical/document/design/image/video`；`document/image/video` 类型的交付文件必须声明相应实际检查，生成成功可先记技术状态，但缺图片/视频检查时此任务不能冒充通过。不适用的层级不填入必需项，并在 `not_applicable` 对象写具体理由。有图片/视频产物时不能把相应实际验收标为不适用。已有任务输出先检查，不因状态为 pending 自动重复生成。
+- 生成任务用 `attempts` 记录每次实际提交的 `job_ref` 和 `submitted/running/unknown/failed/succeeded`，重复查询同一任务不算新尝试；失败后在该条 `repair` 记录具体修正依据。若提交后回执前中断，记 `status:unknown`、`job_ref:null` 及真实 `uncertainty`，按可用请求记录、平台历史和时间范围核实；无法确认就暂停并向用户说明，绝不猜测失败后再次付费提交。`max_attempts` 省略时为 3（初次加两次修订），到上限暂停；记录为运行、未知或已成功但尚未确认产物时先查原任务。脚本报告 `capabilities_to_verify`，它不探测或证明宿主能力；Agent 每次在当前环境核验并遵守已有授权。
+- 对某张原图的完整像素验收 `kind:image`，真实证据须对该张输出及适用的 `reference_image` 使用 `method:view_image`，并记录实际 `artifact/sha256/trace/observation`；这是针对明确需要完整细查的产物，不能为了让所有任务变绿而默认逐张回看。多镜总览范围按上面的 `view_board` 记录，细节不足时保持未验证。视频审查使用 `kind:video` 和 `method:view_video_1x`；需要音频时任务写 `audio_required:true`，证据须记录 `audio_observed:true`。这些字段是检查者的可复核记录，脚本不核实观看真实性。无法实际打开、观看或核验记录则保持未验证。
+- `cuts` 用 `id/from/to/kind` 记录有必要检查的切换：`continuous` 只对明确提供且可比较的同名 `exit/entry` 字段检查；有意变化放入带理由的 `exceptions`。`montage/contrast` 记录 `purpose`，不要求跨场景共享同一空间方向。此类例外须有来自用户原话或上游已存在镜头设计的 `intent_ref`：例如 `{"requirement":"R3","trace":"实际来源读取记录"}`，或 `{"artifact":"D1","excerpt":"设计文件中实际片段","trace":"实际读取记录"}`。确认该依据确实表达本次切换意图；不得在发现接点错误后直接贴“蒙太奇”标签免检。若创作意图确实后来改变，明确记录新设计及必要的用户决定，并使相关接点和成片验收失效。脚本只能核对引用存在与文件版本，不能判断该意图是否成立或发生在问题之前。
+- `issues` 用 `id/task/severity/status` 记录 `blocker/major/minor` 问题；`resolved` 须指向新版本上真实复检的 `recheck_review_id`，不能只改状态。`accepted` 须有具体 `reason` 与用户原始决定的 `user_decision_ref`。这些记录与实际文件、来源和审查工具调用一起核对，不因文本填满就证明问题已经解决。
+
+新输出、参考、需求、邻镜接点或前置依赖变更时，重算哈希及 `basis`，只使受影响任务和下游记录待复核。`running_or_unknown` 要查原任务；`output_exists` 要先检查现存文件；`stale/needs_review/needs_fix` 分别表示版本不符、证据缺失或需修正，不等于应立即重生。完成、暂停与用户授权分别保留证据。
+
+镜头发生变化时，显式让其前后接点检查任务依赖相关镜头，让最终连剪审查依赖所有实际入片镜头和接点；这样变化会使相关接点与最终审查待复核，独立镜头继续有效。不能只列出部分依赖后声称整片均已追踪。
+
+`edit_review` 必须将 `delivery.artifact` 绑定到实际导出的 `video` 产物，`shots` 写预期入片顺序，完成后记录 `delivery.observed_shots` 与每个镜头对应的 `source_versions`（`shot/artifact/sha256`，均为实际输入版本）。字幕或画内文字适用时 `text_required:true`，逐项记录 `expected_text`（`requirement/text`）、真实观看的 `observed_text`、`text_status:passed` 及含裁切/安全区和时序的具体 `text_observation`；有缺字、裁切或尚未看过时记需修正或未验证。无文字时写 `text_required:false`、`text_status:not_applicable` 和具体 `text_reason`。检查者还须原速查看实际交付文件及声音；源视频、最终文件、文本或依赖发生变化后重检。脚本只比较明确记录的顺序、文字及哈希，不能自行发现漏镜、识别字幕裁切或证明实际观看。
+
+例如一条无字幕的虚构 `delivery` 形状如下；实际 ID 和哈希均须来自项目，并且仍需真实播放证据：
+
+```json
+{"artifact":"FINAL","observed_shots":["S01","S02"],"source_versions":[{"shot":"S01","artifact":"V1","sha256":"实际源文件哈希"},{"shot":"S02","artifact":"V2","sha256":"实际源文件哈希"}],"text_required":false,"text_status":"not_applicable","text_reason":"用户明确无画面文字"}
+```
 
 ## 一个规格，三种状态
 
@@ -10,15 +130,15 @@
 - 建议：代理提出的方向和默认候选，不能写成已锁定。
 - 待决：缺失、冲突或变更后需复核的具体事项，说明影响哪个交付；没有信息就留空或写待决，不伪造资产路径、版本和确认日期。
 
-一个文件或会话摘要就是事实源，不另建状态账本。只有本次项目写入已授权时才保存到项目；否则保持会话摘要。无需为了使用 skill 安装文件、创建目录或改项目配置。
+用户规格或会话摘要是创作事实源；标准项目的 `.kpl/state` 只记引用、任务与派生检查，不复制成另一份规格。旧项目可保留规格内的 `kpl-state`。只有本次项目写入已授权时才保存到项目；否则保持会话摘要。无需为了使用 skill 安装文件、创建目录或改项目配置。
 
-## 每次只解决下一项关键决定
+## 发现不明确时立即澄清
 
-问之前判断：答案是否已在资料里？不同答案是否会改变当前结果？是否依赖尚未解决的上游问题？只把现在能决定且有影响的一项交给用户。把可读取的事实查清，不转嫁成询问。
+问之前先核对答案是否已经明确存在于资料里；发现相关缺项、冲突或模糊意图就立即询问，同组可合并。分辨率、帧率和画幅比例缺项均需问，不静默填默认值。
 
 提问包含一个主问题、推荐方向和短取舍。例如：“这组分镜按现有水彩样张锁定画法，还是先探索更硬朗的版画方向？推荐水彩，能复用已确认角色；版画需要复核其造型表现。”不要同时附带画幅、音乐、角色、镜头数等一串独立问题。推荐不是批准，回答只更新其明确涉及的范围。
 
-用户停止询问时，不再追问或换一种方式要求同意；按已知条件给草稿并列出真正影响它的假设/待决项。没有实际输入、确认或平台能力证据时，不宣称可执行的制作稿已批准。用户只要单条提示词，资料足够就直接写，不要求完整规格或另行风格确认。
+用户停止询问时，不再追问或换一种方式要求同意；只继续独立工作，依赖缺失决定的部分保持未验证并暂停。没有实际输入、确认或平台能力证据时，不宣称可执行的制作稿已批准。用户只要单条提示词，资料足够就直接写，不要求完整规格或另行风格确认。
 
 ## 前置顺序与复用
 
@@ -55,7 +175,7 @@
 
 验收按规格列出的可观察条件核对；文本层检查与看过真实输出分开。用户只要提示词时，不发起生成、上传素材、付费或发布。
 
-在同一规格中按 [三层验收](creative-review.md) 分别记录技术检查、分镜与提示词设计审查、实际视频验收的范围、实际版本、证据、结论与未决问题。技术或设计通过不自动使实际运动通过；尚无视频时记录未验证，不虚构样片或增发生成任务。正常速度下检查完整运动及相邻切换，MV结合原曲；动作幅度和24fps不能替代这一步。
+在同一规格中按 [分层验收](creative-review.md) 分别记录技术、文档/设计、图片像素与实际视频的范围、实际版本、证据、结论与未决问题。技术或设计通过不自动使实际运动通过；尚无视频时记录未验证，不虚构样片或增发生成任务。正常速度下检查完整运动及相邻切换，MV结合原曲；动作幅度和24fps不能替代这一步。
 
 ## 变更只使相关确认失效
 
