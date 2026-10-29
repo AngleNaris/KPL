@@ -13,11 +13,15 @@ import os
 import re
 import sys
 import importlib.util
+from html.parser import HTMLParser
 from pathlib import Path
 
 _paths_spec = importlib.util.spec_from_file_location('kpl_project_paths', Path(__file__).with_name('project_paths.py'))
 project_paths = importlib.util.module_from_spec(_paths_spec)
 _paths_spec.loader.exec_module(project_paths)
+_spec_reader = importlib.util.spec_from_file_location('kpl_html_spec_reader', Path(__file__).with_name('html_spec.py'))
+html_spec = importlib.util.module_from_spec(_spec_reader)
+_spec_reader.loader.exec_module(html_spec)
 
 PHASES = {'brief', 'rhythm', 'shot_group', 'shot_spec', 'asset_prep', 'sample_review', 'edit_review'}
 KINDS = {'technical', 'document', 'design', 'image', 'video'}
@@ -51,6 +55,55 @@ def unique_object(pairs):
             raise ValueError(f'duplicate JSON key: {key}')
         result[key] = value
     return result
+
+
+class VisibleHTMLText(HTMLParser):
+    """Extract static, non-script text; this does not prove browser visibility or reading."""
+    VOID = {'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'}
+    BLOCKS = {'p', 'div', 'section', 'tr', 'td', 'th', 'h1', 'h2', 'h3', 'h4', 'li', 'br', 'summary'}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.stack = []
+        self.parts = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        inherited = bool(self.stack and self.stack[-1][1])
+        style = (attrs.get('style') or '').replace(' ', '').lower()
+        hidden = inherited or tag in {'script', 'style', 'template'} or 'hidden' in attrs or 'display:none' in style or 'visibility:hidden' in style
+        if not hidden and tag in self.BLOCKS:
+            self.parts.append('\n')
+        if tag not in self.VOID:
+            self.stack.append((tag, hidden))
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+        if tag not in self.VOID:
+            self.handle_endtag(tag)
+
+    def handle_endtag(self, tag):
+        for i in range(len(self.stack) - 1, -1, -1):
+            if self.stack[i][0] == tag:
+                self.stack = self.stack[:i]
+                break
+        if not (self.stack and self.stack[-1][1]) and tag in self.BLOCKS:
+            self.parts.append('\n')
+
+    def handle_data(self, data):
+        if not (self.stack and self.stack[-1][1]):
+            self.parts.append(data)
+
+
+def read_document_text(path):
+    if Path(path).suffix.lower() == '.kpldoc':
+        return html_spec.document_text(html_spec.load_document(path))
+    text = Path(path).read_text(encoding='utf-8-sig')
+    if Path(path).suffix.lower() != '.html':
+        return text
+    parser = VisibleHTMLText()
+    parser.feed(text)
+    return ''.join(parser.parts)
 
 
 def load_state(spec: Path):
@@ -249,7 +302,7 @@ def check_review_round(root, state, artifacts, files, requirements, required=Fal
                 problems.append('report_missing_or_stale')
             else:
                 try:
-                    content = (root / artifacts[aid]['path']).resolve().read_text(encoding='utf-8-sig')
+                    content = read_document_text((root / artifacts[aid]['path']).resolve())
                 except (OSError, UnicodeError):
                     content = ''
                 if any(summary[k] not in content for k in SUMMARY_FIELDS):
@@ -522,7 +575,7 @@ def check(spec: Path, state: dict, allowed_roots=None, require_project_review=Fa
                              and isinstance(ref.get('excerpt'), str) and bool(ref['excerpt'].strip()))
                 if valid_ref:
                     try:
-                        valid_ref = ref['excerpt'] in (root / artifacts[aid]['path']).resolve().read_text(encoding='utf-8-sig')
+                        valid_ref = ref['excerpt'] in read_document_text((root / artifacts[aid]['path']).resolve())
                     except (OSError, UnicodeError):
                         valid_ref = False
             else:
@@ -562,7 +615,7 @@ def check(spec: Path, state: dict, allowed_roots=None, require_project_review=Fa
             error('source_audit_stale', f'{audit_id}: original source file is missing or changed', scope=scope)
             continue
         try:
-            original = (root / artifacts[aid]['path']).resolve().read_text(encoding='utf-8-sig')
+            original = read_document_text((root / artifacts[aid]['path']).resolve())
         except (OSError, UnicodeError):
             error('source_audit_unreadable', f'{audit_id}: cannot read source as UTF-8', scope=scope)
             continue
@@ -742,7 +795,7 @@ def check(spec: Path, state: dict, allowed_roots=None, require_project_review=Fa
                         local.append({'code': 'claim_unverified', 'detail': f'{rid}: current document and excerpt required'})
                         continue
                     try:
-                        content = (root / doc['path']).resolve().read_text(encoding='utf-8-sig')
+                        content = read_document_text((root / doc['path']).resolve())
                     except (OSError, UnicodeError):
                         local.append({'code': 'claim_unverified', 'detail': f'{rid}: document cannot be read as UTF-8'})
                         continue
@@ -848,7 +901,7 @@ def check(spec: Path, state: dict, allowed_roots=None, require_project_review=Fa
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('spec', type=Path, nargs='?', help='creative-spec Markdown with optional kpl-state block')
+    parser.add_argument('spec', type=Path, nargs='?', help='user .kpldoc/HTML spec with --state, or legacy Markdown with optional kpl-state block')
     parser.add_argument('--state', type=Path, help='separate machine state JSON bound to this spec; legacy embedded blocks still work')
     parser.add_argument('--hash', type=Path, help='read-only SHA256 of a single actual file')
     parser.add_argument('--allow-root', type=Path, action='append', default=[],
@@ -875,6 +928,8 @@ def main(argv=None):
                                               'semantics_verified_by_script': False}
                 print(json.dumps(result, ensure_ascii=False, indent=2))
                 return 1
+            if args.spec.suffix.lower() == '.kpldoc':
+                html_spec.load_document(args.spec)  # reject malformed native data before resuming tasks
         else:
             state = load_state(args.spec)
         if state is None:

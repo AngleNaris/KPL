@@ -19,6 +19,9 @@ LAYOUT = SCRIPTS / 'layout_preview.py'
 loader = importlib.util.spec_from_file_location('kpl_project_test', SCRIPTS / 'kpl_check.py')
 kpl = importlib.util.module_from_spec(loader)
 loader.loader.exec_module(kpl)
+loader = importlib.util.spec_from_file_location('kpl_html_spec_tests', SCRIPTS / 'html_spec.py')
+html_spec = importlib.util.module_from_spec(loader)
+loader.loader.exec_module(html_spec)
 
 
 def run(script, *args):
@@ -34,7 +37,7 @@ class ProjectTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.outer = Path(self.temp.name)
         self.root = self.outer / '合成项目'
-        code, data = run(PROJECT, 'init', self.root)
+        code, data = run(PROJECT, 'init', self.root, '--format', 'html')
         self.assertEqual(code, 0, data)
         self.spec = Path(data['spec'])
 
@@ -60,6 +63,9 @@ class ProjectTests(unittest.TestCase):
         rc, report = run(PROJECT, 'inspect', self.root)
         self.assertEqual(rc, 0, report)
         self.assertEqual(report['status'], 'conforming')
+        self.assertEqual(self.spec.suffix, '.html')
+        self.assertFalse(any(p.suffix.lower() == '.md' for d in self.root.iterdir() if d.is_dir() and d.name != '.kpl'
+                             for p in d.rglob('*') if p.is_file()))
         before = self.spec.read_bytes()
         rc, error = run(PROJECT, 'init', self.root)
         self.assertNotEqual(rc, 0, error)
@@ -200,12 +206,130 @@ class ProjectTests(unittest.TestCase):
         rc, report = run(PROJECT, 'select-spec', '--project', self.root, '--spec',
                          '../outside.md', '--basis', 'fictional')
         self.assertNotEqual(rc, 0, report)
-        final = self.spec.parent / '01_项目规格_v002_final.md'
-        final.write_text('fictional', encoding='utf-8')
+        final = self.spec.parent / '01_项目规格_v002_final.html'
+        model = html_spec.new_model('合成项目')
+        model.update(version='v002', status='final')
+        final.write_text(html_spec.build(model), encoding='utf-8')
         rc, report = run(PROJECT, 'select-spec', '--project', self.root, '--spec',
                          final.relative_to(self.root), '--basis', '合成测试选择这个文件')
         self.assertEqual(rc, 0, report)
         self.assertIn('不表示创作确认', report['note'])
+
+    def test_user_markdown_is_reported_and_cannot_be_selected_as_new_spec(self):
+        markdown = self.spec.parent / '02_旧规格_v001_draft.md'
+        markdown.write_text('原有文件，不迁移', encoding='utf-8')
+        before = markdown.read_bytes()
+        rc, result = run(PROJECT, 'inspect', self.root)
+        self.assertIn('user_document_markdown', [item['issue'] for item in result['issues']])
+        rc, result = run(PROJECT, 'select-spec', '--project', self.root, '--spec',
+                         markdown.relative_to(self.root), '--basis', 'synthetic')
+        self.assertNotEqual(rc, 0, result)
+        self.assertEqual(markdown.read_bytes(), before)
+
+    def test_agent_updates_html_by_stable_id_and_stale_state_is_blocked(self):
+        state_path = self.root / '.kpl' / 'state' / 'project-state.json'
+        rc, read = run(SCRIPTS / 'html_spec.py', 'read', self.spec)
+        self.assertEqual(rc, 0, read)
+        expected = read['sha256']
+        row = html_spec.new_shot('stable-a', 'S001')
+        row.update(duration_seconds='1.5', content='店员回头。', prompt='中文提示词')
+        patch_path = self.root / '.kpl' / 'tmp' / 'patch.json'
+        patch_path.write_text(json.dumps({'operations':[{'target':'shot', 'action':'add', 'id':'stable-a',
+                                                        'old':None, 'new':row}]}, ensure_ascii=False), encoding='utf-8')
+        relative = self.spec.relative_to(self.root)
+        rc, result = run(SCRIPTS / 'html_spec.py', 'apply', '--project', self.root, '--spec', relative,
+                         '--expected-sha256', expected, '--patch', patch_path)
+        self.assertEqual(rc, 0, result)
+        self.assertIn('shot:stable-a', result['affected'])
+        self.assertEqual(html_spec.load(self.spec)['shots'][0]['prompt'], '中文提示词')
+        rc, state = run(SCRIPTS / 'kpl_check.py', self.spec, '--state', state_path, '--allow-root', self.root)
+        self.assertEqual(rc, 1, state)
+        self.assertEqual(state['state_binding']['status'], 'stale')
+        after = self.spec.read_bytes()
+        rc, conflict = run(SCRIPTS / 'html_spec.py', 'apply', '--project', self.root, '--spec', relative,
+                           '--expected-sha256', expected, '--patch', patch_path)
+        self.assertNotEqual(rc, 0, conflict)
+        self.assertEqual(self.spec.read_bytes(), after)
+        rc, selection = run(PROJECT, 'select-spec', '--project', self.root, '--spec', relative,
+                            '--basis', '仅合成测试重新选择')
+        self.assertEqual(rc, 0, selection)
+        patch_path.write_text(json.dumps({'operations':[{'target':'shot', 'id':'stable-a', 'field':'prompt',
+                                                        'old':'过时内容', 'new':'不要写入'}]}, ensure_ascii=False), encoding='utf-8')
+        rc, conflict = run(SCRIPTS / 'html_spec.py', 'apply', '--project', self.root, '--spec', relative,
+                           '--expected-sha256', selection['current_spec']['sha256'], '--patch', patch_path)
+        self.assertNotEqual(rc, 0, conflict)
+        self.assertEqual(self.spec.read_bytes(), after)
+        payload = '人物回头 </script><script>不会执行</script>'
+        patch_path.write_text(json.dumps({'operations':[{'target':'shot', 'id':'stable-a', 'field':'prompt',
+                                                        'old':'中文提示词', 'new':payload}]}, ensure_ascii=False), encoding='utf-8')
+        rc, updated = run(SCRIPTS / 'html_spec.py', 'apply', '--project', self.root, '--spec', relative,
+                          '--expected-sha256', selection['current_spec']['sha256'], '--patch', patch_path)
+        self.assertEqual(rc, 0, updated)
+        current_row = html_spec.load(self.spec)['shots'][0]
+        self.assertEqual(current_row['prompt'], payload)
+        self.assertIn('\\u003c/script\\u003e', self.spec.read_text(encoding='utf-8'))
+        rc, selection = run(PROJECT, 'select-spec', '--project', self.root, '--spec', relative,
+                            '--basis', '仅虚构测试：选择当前规格')
+        self.assertEqual(rc, 0, selection)
+        patch_path.write_text(json.dumps({'operations':[{'target':'shot', 'action':'remove', 'id':'stable-a',
+                                                        'old':current_row, 'new':None}]}, ensure_ascii=False), encoding='utf-8')
+        before_remove = self.spec.read_bytes()
+        rc, denied = run(SCRIPTS / 'html_spec.py', 'apply', '--project', self.root, '--spec', relative,
+                         '--expected-sha256', selection['current_spec']['sha256'], '--patch', patch_path)
+        self.assertNotEqual(rc, 0, denied)
+        self.assertEqual(self.spec.read_bytes(), before_remove)
+
+    def test_agent_registers_and_updates_assets(self):
+        rc, read = run(SCRIPTS / 'html_spec.py', 'read', self.spec)
+        self.assertEqual(rc, 0, read)
+        relative = self.spec.relative_to(self.root)
+        asset = {'id':'A01', 'name':'店员', 'path':'../05_参考资产/02_店员_idA01_v001_draft.png'}
+        patch_path = self.root / '.kpl' / 'tmp' / 'asset.json'
+        patch_path.write_text(json.dumps({'operations':[{'target':'asset', 'action':'add', 'id':'A01', 'old':None, 'new':asset}]},
+                                         ensure_ascii=False), encoding='utf-8')
+        rc, result = run(SCRIPTS / 'html_spec.py', 'apply', '--project', self.root, '--spec', relative,
+                         '--expected-sha256', read['sha256'], '--patch', patch_path)
+        self.assertEqual(rc, 0, result)
+        self.assertIn('asset:A01', result['affected'])
+        rc, selection = run(PROJECT, 'select-spec', '--project', self.root, '--spec', relative, '--basis', '仅合成测试')
+        self.assertEqual(rc, 0, selection)
+        before = self.spec.read_bytes()
+        patch_path.write_text(json.dumps({'operations':[{'target':'asset', 'id':'A01', 'field':'path',
+                                                        'old':asset['path'], 'new':'../../outside.png'}]}, ensure_ascii=False), encoding='utf-8')
+        rc, denied = run(SCRIPTS / 'html_spec.py', 'apply', '--project', self.root, '--spec', relative,
+                         '--expected-sha256', selection['current_spec']['sha256'], '--patch', patch_path)
+        self.assertNotEqual(rc, 0, denied)
+        self.assertEqual(self.spec.read_bytes(), before)
+        patch_path.write_text(json.dumps({'operations':[{'target':'asset', 'id':'A01', 'field':'name',
+                                                        'old':'店员', 'new':'收银员'}]}, ensure_ascii=False), encoding='utf-8')
+        rc, renamed = run(SCRIPTS / 'html_spec.py', 'apply', '--project', self.root, '--spec', relative,
+                          '--expected-sha256', selection['current_spec']['sha256'], '--patch', patch_path)
+        self.assertEqual(rc, 0, renamed)
+        self.assertEqual(html_spec.load(self.spec)['assets'][0]['name'], '收银员')
+
+    def test_agent_sets_layout_camera_and_aspect(self):
+        rc, read = run(SCRIPTS / 'html_spec.py', 'read', self.spec)
+        self.assertEqual(rc, 0, read)
+        relative = self.spec.relative_to(self.root)
+        camera = {'type':'linear', 'start_crop':[0, 0, 1, 1], 'end_crop':[0.1, 0.1, 0.9, 0.9]}
+        patch_path = self.root / '.kpl' / 'tmp' / 'camera.json'
+        patch_path.write_text(json.dumps({'operations':[
+            {'target':'shot', 'action':'add', 'id':'stable-a', 'old':None, 'new':html_spec.new_shot('stable-a', 'S001')},
+            {'target':'shot', 'id':'stable-a', 'field':'layout_camera', 'old':None, 'new':camera},
+            {'target':'project', 'field':'layout_aspect', 'old':'', 'new':'2.39:1'}]}, ensure_ascii=False), encoding='utf-8')
+        rc, result = run(SCRIPTS / 'html_spec.py', 'apply', '--project', self.root, '--spec', relative,
+                         '--expected-sha256', read['sha256'], '--patch', patch_path)
+        self.assertEqual(rc, 0, result)
+        model = html_spec.load(self.spec)
+        self.assertEqual(model['shots'][0]['layout_camera'], camera)
+        self.assertEqual(model['layout_aspect'], '2.39:1')
+        before = self.spec.read_bytes()
+        patch_path.write_text(json.dumps({'operations':[{'target':'shot', 'id':'stable-a', 'field':'layout_camera', 'old':camera,
+            'new':{'type':'static', 'start_crop':[0, 0, 1, 1], 'end_crop':[0, 0, 0.5, 0.5]}}]}), encoding='utf-8')
+        rc, denied = run(SCRIPTS / 'html_spec.py', 'apply', '--project', self.root, '--spec', relative,
+                         '--expected-sha256', result['sha256'], '--patch', patch_path)
+        self.assertNotEqual(rc, 0, denied)
+        self.assertEqual(self.spec.read_bytes(), before)
 
     def test_machine_state_is_separate_and_spec_change_blocks_resume(self):
         state_path = self.root / '.kpl' / 'state' / 'project-state.json'

@@ -1,0 +1,567 @@
+/* KPL 编辑器：页面框架 → 区域 → 组件。所有取值来自 tokens.css。 */
+
+*, *::before, *::after { box-sizing: border-box; border-radius: 0; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: var(--fs-body)/var(--lh-body) var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, p, dl, dd, fieldset { margin: 0; }
+fieldset { border: 0; padding: 0; min-inline-size: 0; }
+button, input, textarea { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+:focus { outline: none; }
+::selection { background: var(--accent-tint-strong); }
+
+/* 滚动条：替代浏览器原生样式，8px 宽、直角、无箭头，与时间线导航条一致。
+   不写标准的 scrollbar-color / scrollbar-width：Chromium 中两者一旦设置，下面的伪元素样式就会失效。 */
+::-webkit-scrollbar { width: 8px; height: 8px; background: transparent; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--line) 60%, transparent); border-radius: 0; }
+::-webkit-scrollbar-thumb:hover, ::-webkit-scrollbar-thumb:active { background: var(--line); }
+::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+
+/* 键盘焦点：内部底边指示 + 底色，不使用外框或外环。 */
+:focus-visible {
+  outline: none;
+  background-color: var(--focus-bg);
+  box-shadow: inset 0 calc(-1 * var(--indicator)) 0 var(--accent);
+}
+
+.icon-sprite { display: none; }
+.icon {
+  inline-size: 18px; block-size: 18px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 1.6;
+  stroke-linecap: square; stroke-linejoin: miter;
+}
+
+.label {
+  font-size: var(--fs-label);
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
+  font-weight: 600;
+}
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* ---------- 页面框架 ---------- */
+.app {
+  display: grid;
+  grid-template-rows: var(--bar-h) var(--bar-h) minmax(0, 1fr) auto;
+  block-size: 100vh;
+}
+
+.app-bar, .toolbar, .status-bar {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding-inline: var(--space-5);
+  border-block-end: var(--hair) solid var(--rule);
+  min-inline-size: 0;
+}
+.app-bar { background: var(--sunken); }
+.app-title {
+  font-size: var(--fs-title); font-weight: 600; line-height: var(--lh-tight);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-inline-size: 0;
+}
+.app-meta {
+  font-size: var(--fs-small); color: var(--text-2);
+  padding-inline-start: var(--space-3); border-inline-start: var(--hair) solid var(--rule);
+  white-space: nowrap;
+}
+.app-bar-end, .toolbar-end { margin-inline-start: auto; display: flex; align-items: center; gap: var(--space-2); position: relative; }
+
+.toolbar { background: var(--surface); padding-inline-start: var(--space-3); }
+
+.status-bar {
+  block-size: 32px; font-size: var(--fs-label); color: var(--text-2);
+  background: var(--sunken); border-block-end: 0; border-block-start: var(--hair) solid var(--rule);
+}
+.status-bar p:first-child { flex: 1; min-inline-size: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status-facts { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ---------- 控件 ---------- */
+.btn {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  block-size: var(--control-h); padding-inline: var(--space-3) var(--space-4);
+  border: var(--hair) solid var(--line); background: transparent; color: var(--text);
+  font-size: var(--fs-small); font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.btn:hover { background: var(--hover); }
+.btn-quiet { border-color: transparent; color: var(--text-2); }
+.btn-quiet:hover, .btn-quiet[aria-expanded="true"] { color: var(--text); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn-primary:hover { background: color-mix(in srgb, var(--accent) 86%, var(--text)); }
+.btn-primary:focus-visible { background: var(--accent); box-shadow: inset 0 calc(-1 * var(--indicator)) 0 var(--on-accent); }
+.btn:disabled, .btn:disabled:hover {
+  cursor: default; background: transparent; border-color: var(--rule); color: var(--text-disabled);
+}
+kbd {
+  font: 600 var(--fs-label) var(--font-mono);
+  padding-inline-start: var(--space-2); margin-inline-start: var(--space-1);
+  border-inline-start: var(--hair) solid currentColor;
+}
+
+.dirty-mark {
+  display: flex; align-items: center; gap: var(--space-2);
+  font-size: var(--fs-small); color: var(--warning); white-space: nowrap; margin-inline-end: var(--space-2);
+}
+.dirty-mark::before { content: ""; inline-size: 8px; block-size: 8px; background: currentColor; }
+
+/* 视图切换 */
+.tabs { display: flex; align-self: stretch; }
+.tab {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  padding-inline: var(--space-3); border: 0; background: transparent;
+  color: var(--text-2); font-size: var(--fs-body); cursor: pointer;
+}
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] {
+  color: var(--text); font-weight: 600;
+  box-shadow: inset 0 calc(-1 * var(--indicator)) 0 var(--accent);
+}
+
+/* 显示设置弹层：锚定在触发按钮右下 */
+.popover {
+  position: absolute; inset-block-start: calc(100% + var(--space-2)); inset-inline-end: 0; z-index: 10;
+  inline-size: 240px; padding: var(--space-4);
+  display: grid; gap: var(--space-4);
+  background: var(--surface); border: var(--hair) solid var(--line);
+  box-shadow: 0 12px 32px var(--shadow);
+}
+.choice-group { display: grid; gap: var(--space-1); }
+.choice-group .label { margin-block-end: var(--space-1); }
+.choice {
+  display: flex; align-items: center; gap: var(--space-3);
+  min-block-size: var(--control-h); padding-inline: var(--space-2);
+  font-size: var(--fs-small); cursor: pointer;
+}
+.choice:hover { background: var(--hover); }
+.choice:has(:focus-visible) { background: var(--focus-bg); box-shadow: inset 0 calc(-1 * var(--indicator)) 0 var(--accent); }
+.choice input {
+  appearance: none; margin: 0; inline-size: 16px; block-size: 16px; flex: none;
+  border: var(--hair) solid var(--line); background: var(--sunken);
+}
+.choice input:checked { background: var(--accent); border-color: var(--accent); box-shadow: inset 0 0 0 3px var(--surface); }
+.choice input:focus-visible { box-shadow: inset 0 0 0 3px var(--surface); }
+.swatch { inline-size: 14px; block-size: 14px; background: var(--accent); flex: none; }
+
+/* ---------- 工作区 ---------- */
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto min(var(--aside-w), 50%);
+  min-block-size: 0;
+}
+.view { min-inline-size: 0; overflow: auto; padding: var(--space-5); }
+.detail {
+  position: relative; overflow: auto; padding: var(--space-5);
+  background: var(--surface);
+  display: flex; flex-direction: column; gap: var(--space-5);
+}
+
+/* 表格 */
+.table-scroll { overflow-x: auto; border: var(--hair) solid var(--rule); background: var(--surface); }
+.shot-table { inline-size: 100%; min-inline-size: 800px; border-collapse: collapse; table-layout: fixed; }
+.c-thumb { inline-size: calc(var(--thumb-w) + 2 * var(--space-2)); }
+.c-id { inline-size: 80px; } .c-dur { inline-size: 88px; } .c-scale { inline-size: 88px; }
+.c-motion { inline-size: 112px; } .c-assets { inline-size: 80px; } .c-mark { inline-size: 64px; }
+.shot-table th {
+  block-size: 40px; padding-inline: var(--space-3); text-align: start;
+  background: var(--sunken); border-block-end: var(--hair) solid var(--line);
+  font-size: var(--fs-label); letter-spacing: var(--tracking-label); color: var(--text-3); font-weight: 600;
+}
+.shot-table td {
+  padding: var(--space-3); vertical-align: middle;
+  border-block-end: var(--hair) solid var(--rule); overflow-wrap: anywhere;
+}
+.shot-table .num { text-align: end; }
+.shot-table .center { text-align: center; }
+.shot-table tbody tr { cursor: pointer; }
+.shot-table tbody tr:hover { background: var(--hover); }
+.shot-table tbody tr[aria-selected="true"] { background: var(--accent-tint); }
+.shot-table .td-thumb { padding: var(--space-2); }
+.td-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.empty { padding: var(--space-6) var(--space-4); color: var(--text-2); }
+
+.thumb { display: block; inline-size: var(--thumb-w); aspect-ratio: 16 / 9; object-fit: cover; background: var(--sunken); }
+.thumb-empty { display: grid; place-items: center; color: var(--text-3); border: var(--hair) dashed var(--rule); background: transparent; }
+
+/* 标记：只用图标与颜色区分，名称作为可访问名称 */
+.mark { display: inline-grid; place-items: center; inline-size: 24px; block-size: 24px; vertical-align: middle; }
+.mark .icon { inline-size: 20px; block-size: 20px; stroke-width: 2; }
+.mark-done { color: var(--mark-done); } .mark-revise { color: var(--mark-revise); } .mark-wip { color: var(--mark-wip); }
+.mark-question { color: var(--mark-question); } .mark-hold { color: var(--mark-hold); } .mark-none { color: var(--text-3); }
+.mark-btn { inline-size: 32px; block-size: 32px; display: inline-grid; place-items: center; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.mark-btn:hover, .mark-btn[aria-expanded="true"] { background: var(--hover); }
+.ref-alert { display: inline-grid; vertical-align: -3px; margin-inline-end: var(--space-1); color: var(--warning); }
+.ref-alert .icon { inline-size: 16px; block-size: 16px; }
+
+/* 单元格：只读与编辑共用同一个无边框输入框，外观等同普通文字，切换模式不改变布局。 */
+.cell-input {
+  display: block; inline-size: 100%; margin: 0; padding: 0; border: 0;
+  background: transparent; color: inherit; font: inherit; line-height: inherit;
+}
+.cell-input[readonly] { pointer-events: none; }
+.cell-input.mono { font-family: var(--font-mono); }
+.cell-input::placeholder { color: var(--warning); opacity: 1; }
+textarea.cell-input { resize: none; field-sizing: content; overflow: hidden; }
+.cell-number { font-weight: 600; font-variant-numeric: tabular-nums; }
+.cell-dur { display: inline-block; inline-size: auto; min-inline-size: 1ch; field-sizing: content; text-align: end; font-variant-numeric: tabular-nums; }
+.unit { font-family: var(--font-mono); }
+.cell-input[aria-invalid="true"] { color: var(--danger); }
+.mark-btn[aria-disabled="true"] { cursor: inherit; }
+.mark-btn[aria-disabled="true"]:hover { background: transparent; }
+
+/* 浮层：标记菜单与素材预览，均锚定到触发元素 */
+.menu, .peek {
+  position: fixed; z-index: 20; background: var(--surface);
+  border: var(--hair) solid var(--line); box-shadow: 0 12px 32px var(--shadow);
+}
+.menu { display: grid; min-inline-size: 168px; padding: var(--space-1); z-index: 30; }
+.menu-item {
+  display: flex; align-items: center; gap: var(--space-3); min-block-size: var(--control-h);
+  padding-inline: var(--space-2) var(--space-4); border: 0; background: transparent;
+  font-size: var(--fs-small); text-align: start; cursor: pointer;
+}
+.menu-item:hover { background: var(--hover); }
+.menu-item[aria-checked="true"] { background: var(--accent-tint); font-weight: 600; }
+.peek { inline-size: var(--peek-w); padding: var(--space-2); pointer-events: none; }
+.peek.peek-large { inline-size: var(--peek-large-w); }
+.peek.peek-large .peek-frame img { max-block-size: 360px; }
+.peek-frame { background: var(--sunken); }
+.peek-frame img { display: block; inline-size: 100%; max-block-size: 210px; object-fit: contain; }
+.peek-name { display: flex; gap: var(--space-2); margin-block-start: var(--space-2); font-size: var(--fs-small); font-weight: 600; }
+
+/* 时间线视图：上方监视器、可拖动的分隔条、下方时间线面板；视图本身不滚动 */
+#view-timeline {
+  display: grid; padding: 0; overflow: hidden;
+  grid-template-rows: minmax(0, 1fr) auto min(var(--panel-h), 75%);
+}
+
+/* 节奏预览监视器：画面按画幅等比放入可用区域并居中，下方一行是简述、时码与播放 */
+.monitor { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: var(--space-3); min-block-size: 0; padding: var(--space-4) var(--space-5) var(--space-3); }
+.monitor-stage { display: flex; align-items: center; justify-content: center; min-block-size: 0; min-inline-size: 0; }
+.monitor-frame { flex: none; background: #000; color: #CFCDC7; }
+.monitor-frame canvas { display: block; inline-size: 100%; block-size: 100%; }
+.transport { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: var(--space-4); }
+.monitor-caption { min-inline-size: 0; font-size: var(--fs-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.monitor-caption .mono { font-weight: 600; }
+.transport-center { display: flex; align-items: center; gap: var(--space-3); }
+.transport-end { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-4); min-inline-size: 0; }
+.timecode { font-size: var(--fs-title); color: var(--accent); font-variant-numeric: tabular-nums; }
+#aspect-trigger { gap: var(--space-2); padding-inline: var(--space-2); }
+.aspect-label { color: var(--text-3); font-weight: 400; }
+#aspect-trigger[aria-disabled="true"] { cursor: default; }
+#aspect-trigger[aria-disabled="true"]:hover { background: transparent; }
+#aspect-trigger[aria-disabled="true"] .icon { display: none; }
+#aspect-trigger[aria-invalid="true"] #aspect-value { color: var(--danger); }
+#aspect-input { inline-size: 9ch; }
+
+/* 分隔条：上下拖动分配监视器与时间线的高度 */
+.splitter {
+  block-size: 7px; cursor: row-resize; touch-action: none; background-color: var(--surface);
+  background-image: linear-gradient(var(--rule), var(--rule));
+  background-size: 100% var(--hair); background-position: center; background-repeat: no-repeat;
+}
+.splitter:hover, .splitter.is-dragging, .splitter:focus-visible {
+  background-color: var(--surface); box-shadow: none;
+  background-image: linear-gradient(var(--accent), var(--accent)); background-size: 100% 3px;
+}
+
+/* 竖向分隔条：左右拖动调整详情栏宽度 */
+.splitter-v {
+  block-size: auto; inline-size: 7px; cursor: col-resize;
+  background-size: var(--hair) 100%;
+}
+.splitter-v:hover, .splitter-v.is-dragging, .splitter-v:focus-visible { background-size: 3px 100%; }
+
+/* 时间线面板：工具条、可缩放的标尺与轨道、细导航条、待定区 */
+.timeline-panel {
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; min-block-size: 0;
+  padding: 0 var(--space-5) var(--space-3); background: var(--surface);
+}
+.timeline-tools { display: flex; align-items: center; gap: var(--space-1); min-inline-size: 0; }
+.tools-gap { flex: 1; }
+.btn-icon { padding-inline: var(--space-2); }
+
+/* 横向滚动只在时间线内部，原生滚动条隐藏，由下方导航条代替 */
+.timeline-scroll { overflow-x: auto; overflow-y: hidden; min-block-size: 0; scrollbar-width: none; }
+.timeline-scroll::-webkit-scrollbar { display: none; }
+.timeline { position: relative; block-size: 100%; display: grid; grid-template-rows: 28px minmax(0, 1fr); }
+.ruler {
+  position: relative; cursor: col-resize; touch-action: none; border-block-end: var(--hair) solid var(--line);
+  /* 细分刻度：--minor 为相邻细刻度的像素距离 */
+  background-image: repeating-linear-gradient(to right, var(--rule) 0 var(--hair), transparent var(--hair) var(--minor, 10px));
+  background-size: 100% 5px; background-position: bottom; background-repeat: no-repeat;
+}
+.tick { position: absolute; inset-block-end: 0; block-size: 100%; }
+.tick::after {
+  content: ""; position: absolute; inset-block-end: 0; inset-inline-start: 0;
+  inline-size: var(--hair); block-size: 10px; background: var(--line);
+}
+.tick span {
+  position: absolute; inset-block-start: 2px; translate: -50% 0;
+  font: var(--fs-label) var(--font-mono); color: var(--text-2); white-space: nowrap;
+}
+.tick.first span { translate: 0 0; }
+.tick.last span, .tick.last::after { translate: -100% 0; }
+.track { position: relative; min-block-size: 0; background: var(--sunken); margin-block-start: var(--space-2); }
+
+/* 片段：参考画面沿片段横向平铺成胶片条，顶部一行镜号、时长与标记 */
+.clip {
+  position: absolute; inset-block: 0; overflow: hidden; padding: 0; text-align: start;
+  border: 0; border-inline-end: var(--hair) solid var(--sunken);
+  background: var(--raised); color: var(--text); cursor: pointer;
+}
+.clip:nth-child(even) { background: color-mix(in srgb, var(--raised) 70%, var(--hover)); }
+.clip:hover { background: var(--hover); }
+.clip-strip {
+  position: absolute; inset: 0; opacity: 0.8;
+  background-repeat: repeat-x; background-size: auto 100%; background-position: left center;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.clip:hover .clip-strip, .clip[aria-pressed="true"] .clip-strip { opacity: 1; }
+.clip-label {
+  position: absolute; inset-inline: 0; inset-block-start: 0;
+  display: flex; align-items: center; gap: var(--space-2); block-size: 26px; padding-inline: var(--space-2);
+  background: color-mix(in srgb, var(--raised) 88%, transparent); white-space: nowrap;
+}
+.clip-id { font: 600 var(--fs-small) var(--font-mono); }
+.clip-dur { font: var(--fs-label) var(--font-mono); color: var(--text-2); }
+.clip-id, .clip-dur { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
+.clip .mark { flex: none; margin-inline-start: auto; inline-size: 20px; block-size: 20px; }
+.clip .mark .icon { inline-size: 16px; block-size: 16px; }
+.clip[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
+.clip[aria-pressed="true"] .clip-label { background: var(--accent); color: var(--on-accent); }
+.clip[aria-pressed="true"] .clip-dur, .clip[aria-pressed="true"] .mark { color: var(--on-accent); }
+/* 预览播放到的片段：标签底部一条细线，不改尺寸 */
+.clip.is-current .clip-label { box-shadow: inset 0 -2px 0 currentColor; }
+
+/* 时间线编辑：拖片段调整顺序，拖右边缘调整时长 */
+.timeline.is-editing .track .clip { cursor: grab; touch-action: none; }
+.pending-list .clip { touch-action: none; }
+.clip-handle {
+  position: absolute; inset-block: 0; inset-inline-end: 0; inline-size: 8px; cursor: ew-resize;
+  background: color-mix(in srgb, var(--text) 30%, transparent); opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.clip:hover .clip-handle, .clip:focus-visible .clip-handle, .timeline.is-dragging .clip-handle { opacity: 1; }
+.clip.is-dragging { z-index: 2; cursor: grabbing; opacity: 0.85; box-shadow: 0 8px 24px var(--shadow); transition: none; }
+.timeline.is-dragging, .timeline.is-dragging * { cursor: grabbing; user-select: none; }
+.drop-mark, .playhead { position: absolute; inset-block: 0; inline-size: 2px; translate: -1px 0; pointer-events: none; z-index: 3; }
+.drop-mark { background: var(--accent); }
+.playhead { background: var(--text); }
+.playhead::before {
+  content: ""; position: absolute; inset-block-start: 0; inset-inline-start: -5px;
+  inline-size: 12px; block-size: 12px; background: var(--text);
+  clip-path: polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%);
+}
+
+/* 导航条：替代原生滚动条，拖动滑块或点击空白处平移 */
+.timeline-nav { position: relative; block-size: 8px; margin-block-start: var(--space-2); background: var(--sunken); cursor: pointer; touch-action: none; }
+.timeline-nav-thumb { position: absolute; inset-block: 0; background: var(--line); opacity: 0.6; transition: opacity var(--dur-fast) var(--ease); }
+.timeline-nav:hover .timeline-nav-thumb, .timeline-nav.is-dragging .timeline-nav-thumb { opacity: 1; }
+
+/* 待定区：时间线下方一行 */
+.pending-lane { display: flex; align-items: center; gap: var(--space-3); min-inline-size: 0; margin-block-start: var(--space-3); }
+.pending-lane .label { flex: none; }
+.pending-lane .hint { min-inline-size: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pending-list { display: flex; gap: var(--space-2); flex: none; }
+.pending-list .clip {
+  position: relative; inline-size: 112px; block-size: 52px;
+  border: var(--hair) dashed var(--line); background: transparent;
+}
+.pending-list .clip[aria-pressed="true"] { border-color: var(--accent); }
+
+/* 详情：只放表格里没有的信息 */
+.detail-head { display: grid; gap: var(--space-1); }
+.detail-id { font: 600 var(--fs-heading) var(--font-mono); line-height: var(--lh-tight); }
+.block, .field { display: grid; gap: var(--space-2); align-content: start; }
+.block-title { display: flex; align-items: baseline; gap: var(--space-2); }
+.block-title > span:first-child { flex: 1; }
+.block-title, .field > .label { font-size: var(--fs-label); letter-spacing: var(--tracking-label); color: var(--text-3); font-weight: 600; }
+.count { font: var(--fs-label) var(--font-mono); color: var(--text-3); }
+.field-empty { color: var(--text-3); }
+.hint { font-size: var(--fs-label); color: var(--text-3); }
+
+/* 编辑时获得焦点的输入区：底线收细为 1px，底色保持不变 */
+.cell-input:focus-visible, .rich:focus-visible { box-shadow: inset 0 -1px 0 var(--accent); }
+
+/* 描述与提示词：只读与编辑是同一个元素（编辑时 contenteditable），染色只改颜色与底色，不改尺寸。 */
+.rich { white-space: pre-wrap; overflow-wrap: anywhere; line-height: var(--lh-body); min-block-size: calc(1em * var(--lh-body)); }
+.rich:empty::before { content: "未填写"; color: var(--text-3); }
+.block:has(.rich:focus-visible) .block-title { color: var(--accent); }
+.tok-ref { color: var(--accent); background: var(--accent-tint); }
+.tok-ref[role="button"] { cursor: pointer; }
+.tok-ref[role="button"]:hover { text-decoration: underline; text-underline-offset: 3px; }
+.tok-missing { color: var(--warning); text-decoration: underline dashed; text-underline-offset: 3px; }
+.tok-picture { color: var(--info); }
+/* 分段：低饱和文字色；悬停时整段铺一层同色淡底，跨行时每行都铺 */
+.seg { -webkit-box-decoration-break: clone; box-decoration-break: clone; transition: background-color var(--dur-fast) var(--ease); }
+.seg:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
+.seg-camera { color: var(--seg-camera); } .seg-style { color: var(--seg-style); }
+.seg-scene { color: var(--seg-scene); } .seg-action { color: var(--seg-action); }
+/* 右键菜单里的类别色块；“清除类别”只有边框 */
+.seg-swatch { inline-size: 12px; block-size: 12px; flex: none; background: currentColor; }
+.seg-swatch.is-none { background: transparent; box-shadow: inset 0 0 0 var(--hair) var(--line); }
+
+/* 编辑模式的全页面提示：中性取景器角标 + 斜向闪光 + 星芒。固定定位、不接收指针，不影响布局。
+   进入时闪光自左上划向右下、星芒依次闪烁；退出时沿原路反向。 */
+.edit-fx { position: fixed; inset: 0; z-index: 40; pointer-events: none; overflow: hidden; }
+.edit-fx i {
+  position: absolute; inline-size: 28px; block-size: 28px; border: 0 solid var(--text-2);
+  opacity: 0; transition: opacity 240ms ease-out, translate 240ms ease-out;
+}
+.edit-fx i:nth-of-type(1) { inset-block-start: 6px; inset-inline-start: 6px; border-block-start-width: 2px; border-inline-start-width: 2px; translate: -16px -16px; }
+.edit-fx i:nth-of-type(2) { inset-block-start: 6px; inset-inline-end: 6px; border-block-start-width: 2px; border-inline-end-width: 2px; translate: 16px -16px; }
+.edit-fx i:nth-of-type(3) { inset-block-end: 6px; inset-inline-start: 6px; border-block-end-width: 2px; border-inline-start-width: 2px; translate: -16px 16px; }
+.edit-fx i:nth-of-type(4) { inset-block-end: 6px; inset-inline-end: 6px; border-block-end-width: 2px; border-inline-end-width: 2px; translate: 16px 16px; }
+.edit-fx.on i { opacity: 1; translate: 0 0; }
+
+.edit-fx::before {
+  content: ""; position: absolute; inset-block: -50%; inset-inline-start: 0; inline-size: 26vw;
+  rotate: 18deg; opacity: 0; translate: -40vw 0;
+  background: linear-gradient(90deg, transparent, var(--glint-edge) 28%, var(--glint) 50%, var(--glint-edge) 72%, transparent);
+}
+.edit-fx.sweep-in::before { animation: fx-glint 640ms cubic-bezier(.4, 0, .2, 1); }
+.edit-fx.sweep-out::before { animation: fx-glint 640ms cubic-bezier(.4, 0, .2, 1) reverse; }
+@keyframes fx-glint {
+  from { opacity: 1; translate: -40vw 0; }
+  to { opacity: 1; translate: 140vw 0; }
+}
+
+.edit-fx svg {
+  position: absolute; inline-size: var(--size); block-size: var(--size); translate: -50% -50%;
+  fill: var(--glint); filter: drop-shadow(0 0 4px var(--glint-glow)) drop-shadow(0 0 12px var(--glint-glow)); opacity: 0;
+}
+.edit-fx svg:nth-of-type(1) { left: 10%; top: 16%; --size: 26px; --in: 40ms;  --out: 560ms; }
+.edit-fx svg:nth-of-type(2) { left: 24%; top: 64%; --size: 18px; --in: 140ms; --out: 460ms; }
+.edit-fx svg:nth-of-type(3) { left: 40%; top: 28%; --size: 34px; --in: 220ms; --out: 380ms; }
+.edit-fx svg:nth-of-type(4) { left: 55%; top: 80%; --size: 22px; --in: 300ms; --out: 300ms; }
+.edit-fx svg:nth-of-type(5) { left: 68%; top: 12%; --size: 24px; --in: 380ms; --out: 220ms; }
+.edit-fx svg:nth-of-type(6) { left: 82%; top: 50%; --size: 36px; --in: 460ms; --out: 140ms; }
+.edit-fx svg:nth-of-type(7) { left: 93%; top: 88%; --size: 18px; --in: 560ms; --out: 40ms; }
+.edit-fx.sweep-in svg { animation: fx-twinkle 520ms ease-out var(--in) both; }
+.edit-fx.sweep-out svg { animation: fx-twinkle 520ms ease-out var(--out) both; }
+@keyframes fx-twinkle {
+  0% { opacity: 0; scale: 0.2; rotate: 0deg; }
+  35% { opacity: 1; scale: 1; rotate: 45deg; }
+  100% { opacity: 0; scale: 0.3; rotate: 90deg; }
+}
+
+.asset-list { display: grid; gap: var(--space-1); padding: 0; margin: 0; list-style: none; }
+.asset-card {
+  display: grid; grid-template-columns: 64px auto minmax(0, 1fr); align-items: center; gap: var(--space-3);
+  inline-size: 100%; padding: var(--space-1); border: 0; background: transparent; text-align: start; cursor: pointer;
+}
+.asset-card:hover { background: var(--hover); }
+.asset-thumb { inline-size: 64px; block-size: 48px; object-fit: cover; background: var(--sunken); }
+.asset-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asset-issue { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1); font-size: var(--fs-small); color: var(--warning); }
+
+.visually-hidden { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* ---------- 窄窗口：详情栏移到视图下方，工作区整体滚动 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .edit-fx i { transition: none; }
+  .edit-fx::before, .edit-fx svg { animation: none !important; }
+}
+
+@media (max-width: 1023px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); overflow: auto; align-content: start; }
+  .view { overflow: visible; }
+  /* 窄窗口下时间线视图仍按一屏高度排布，监视器与时间线不随内容伸长 */
+  #view-timeline { block-size: max(480px, calc(100vh - 2 * var(--bar-h) - 32px)); }
+  .detail { overflow: visible; border-inline-start: 0; border-block-start: var(--hair) solid var(--rule); }
+  .app-meta { display: none; }
+}
+
+/* ---------- 交互动效：每个进入都有对称的退出；隐藏类元素的退出播放完才真正移除 ---------- */
+.btn, .tab, .clip, .choice, .menu-item, .asset-card, .mark-btn, .cell-input, .shot-table tbody tr, .tok-ref {
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), translate var(--dur-fast) var(--ease);
+}
+.btn:active:not(:disabled), .clip:active, .mark-btn:active, .asset-card:active, .menu-item:active { translate: 0 1px; }
+
+/* 弹层、菜单、素材预览：自触发元素一侧展开，再沿原路收回 */
+.popover, .menu, .peek {
+  transition: opacity var(--dur) var(--ease), translate var(--dur) var(--ease), display var(--dur) allow-discrete;
+}
+.popover[hidden], .menu[hidden], .peek[hidden] { opacity: 0; translate: 0 -6px; }
+.menu[data-side="above"][hidden], .peek[data-side="above"][hidden] { translate: 0 6px; }
+@starting-style {
+  .popover:not([hidden]), .menu:not([hidden]), .peek:not([hidden]) { opacity: 0; translate: 0 -6px; }
+  .menu[data-side="above"]:not([hidden]), .peek[data-side="above"]:not([hidden]) { translate: 0 6px; }
+}
+
+/* 视图切换：两个视图叠在同一格内交叉淡入淡出 */
+.workspace > .view { grid-area: 1 / 1; transition: opacity var(--dur) var(--ease), translate var(--dur) var(--ease), display var(--dur) allow-discrete; }
+.workspace > .view[hidden] { opacity: 0; translate: 0 4px; pointer-events: none; }
+@starting-style { .workspace > .view:not([hidden]) { opacity: 0; translate: 0 4px; } }
+.workspace > .splitter-v { grid-area: 1 / 2; }
+.workspace > .detail { grid-area: 1 / 3; }
+@media (max-width: 1023px) { .workspace > .detail { grid-area: 2 / 1; } .workspace > .splitter-v { display: none; } }
+
+/* 切换镜头：旧详情作为残影淡出，新详情同时淡入 */
+.detail-ghost {
+  position: absolute; inset: 0 0 auto 0; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-5);
+  pointer-events: none; animation: fx-fade-out var(--dur) var(--ease) forwards;
+}
+.detail.entering > :not(.detail-ghost) { animation: fx-fade-in var(--dur) var(--ease) both; }
+
+/* 未保存标记、时长待确认区 */
+.drop-mark { transition: opacity var(--dur-fast) var(--ease), display var(--dur-fast) allow-discrete; }
+.drop-mark[hidden] { display: none; opacity: 0; }
+@starting-style { .drop-mark:not([hidden]) { opacity: 0; } }
+.dirty-mark, .pending-lane { transition: opacity var(--dur) var(--ease), translate var(--dur) var(--ease), display var(--dur) allow-discrete; }
+.dirty-mark[hidden] { opacity: 0; translate: 4px 0; }
+.pending-lane[hidden] { opacity: 0; translate: 0 4px; }
+@starting-style {
+  .dirty-mark:not([hidden]) { opacity: 0; translate: 4px 0; }
+  .pending-lane:not([hidden]) { opacity: 0; translate: 0 4px; }
+}
+
+/* 一次性反馈：复制、设标记、状态文字更新 */
+.copied { animation: fx-copied 420ms var(--ease); }
+.mark-btn.just-set .mark { animation: fx-pop 260ms var(--ease); }
+#status.refresh { animation: fx-fade-in var(--dur) var(--ease); }
+
+/* 未保存修改对话框 */
+.dialog {
+  inline-size: min(440px, calc(100vw - 48px)); padding: var(--space-5); margin: auto;
+  background: var(--surface); color: var(--text); border: var(--hair) solid var(--line); box-shadow: 0 24px 64px var(--shadow);
+  transition: opacity var(--dur) var(--ease), scale var(--dur) var(--ease), display var(--dur) allow-discrete, overlay var(--dur) allow-discrete;
+}
+.dialog:not([open]) { opacity: 0; scale: .97; }
+.dialog::backdrop {
+  background: var(--scrim);
+  transition: opacity var(--dur) var(--ease), display var(--dur) allow-discrete, overlay var(--dur) allow-discrete;
+}
+.dialog:not([open])::backdrop { opacity: 0; }
+@starting-style {
+  .dialog[open] { opacity: 0; scale: .97; }
+  .dialog[open]::backdrop { opacity: 0; }
+}
+.dialog-title { font-size: var(--fs-title); font-weight: 600; margin-block-end: var(--space-2); }
+.dialog p { color: var(--text-2); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-block-start: var(--space-5); }
+
+@keyframes fx-fade-in { from { opacity: 0; translate: 0 4px; } }
+@keyframes fx-fade-out { to { opacity: 0; translate: 0 -4px; } }
+@keyframes fx-pop { from { opacity: 0; scale: .4; } }
+@keyframes fx-copied {
+  from { box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--accent) 40%, transparent); }
+  to { box-shadow: inset 0 0 0 999px transparent; }
+}
+
+/* 减少动态效果：动画缩到 1ms，仍触发结束事件，保证残影等清理照常完成 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after, ::backdrop {
+    animation-duration: 1ms !important; animation-delay: 0ms !important; transition-duration: 1ms !important;
+  }
+}
+
+/* 时间线说明：问号按钮展开，由脚本定位到按钮旁 */
+.help-panel { position: fixed; inset: auto; inline-size: 360px; gap: var(--space-3); font-size: var(--fs-small); color: var(--text-2); }
+.keys { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-4); }
+.keys dt { color: var(--text); white-space: nowrap; }
+.keys kbd { padding: 0 var(--space-1); margin: 0; border: var(--hair) solid var(--line); font-weight: 400; }

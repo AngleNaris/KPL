@@ -1,0 +1,633 @@
+/* Offline editor. A file handle is stored locally only when the user opts in. */
+(function (root) {
+  'use strict';
+
+  const SCHEMA = 'kpl-user-spec-v2';
+  const ROOT_FIELDS = ['schema', 'document_id', 'version', 'status', 'confirmation', 'revision',
+    'title', 'summary', 'global_settings', 'layout_aspect', 'assets', 'shots'];
+  // 文本字段；layout_camera 是预览运镜对象或 null，单独校验、本页不编辑
+  const FIELDS = ['number', 'duration_seconds', 'thumbnail', 'content', 'description', 'shot_scale', 'camera_motion', 'prompt',
+    'video_prompt', 'mark'];
+  const ASSET_FIELDS = ['id', 'name', 'path'];
+  const MARKS = {'': '未标记', done: '完成', revise: '待修改', wip: '进行中', question: '有疑问', hold: '搁置'};
+  const LABELS = {number: '镜号', duration_seconds: '时长（秒）', thumbnail: '缩略图相对路径', content: '一句话内容',
+    description: '详细描述', shot_scale: '景别', camera_motion: '镜头运动', prompt: '图片生成提示词', video_prompt: '视频提示词', mark: '标记'};
+  const MULTILINE = ['content', 'description', 'prompt', 'video_prompt'];
+  // 描述与提示词中的分段标记 {类别:内容}；只读视图与复制只保留内容（格式见 references/spec-format.md）
+  const SEGMENT = /\{(?:镜头|风格|场景|动态)[:：]((?:@\{[^{}]*\}|[^{}])*)\}/g;
+  const plainText = value => value.replace(SEGMENT, '$1');
+  const exactKeys = (value, keys) => Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
+
+  function encodeData(value) {
+    return JSON.stringify(value, null, 2).replace(/[<>&\u2028\u2029]/g, ch =>
+      ({'<':'\\u003c','>':'\\u003e','&':'\\u0026','\u2028':'\\u2028','\u2029':'\\u2029'}[ch]));
+  }
+
+  /* 预览运镜与 layout 预演清单的 camera 相同：null，或 static/linear 加两个 [左, 上, 右, 下] 归一化裁切框。 */
+  function validCamera(value) {
+    if (value === null) return true;
+    if (!value || typeof value !== 'object' || Array.isArray(value) || !exactKeys(value, ['type', 'start_crop', 'end_crop']) ||
+        !['static', 'linear'].includes(value.type)) return false;
+    const box = crop => Array.isArray(crop) && crop.length === 4 &&
+      crop.every(v => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1) && crop[0] < crop[2] && crop[1] < crop[3];
+    return box(value.start_crop) && box(value.end_crop) &&
+      (value.type === 'linear' || value.start_crop.every((v, i) => v === value.end_crop[i]));
+  }
+
+  const validAspect = value => value === '' || (/^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/.test(value) && value.split(':').every(v => Number(v) > 0));
+
+  function validate(value) {
+    if (!value || typeof value !== 'object' || !exactKeys(value, ROOT_FIELDS) || value.schema !== SCHEMA ||
+        typeof value.document_id !== 'string' || !value.document_id.trim() ||
+        !/^v(?:00[1-9]|0[1-9][0-9]|[1-9][0-9]{2})$/.test(value.version) ||
+        !['draft', 'review', 'final'].includes(value.status) || !Number.isSafeInteger(value.revision) ||
+        value.revision < 1 || value.revision >= 2147483647 ||
+        !['unconfirmed', 'confirmed'].includes(value.confirmation) ||
+        typeof value.title !== 'string' || typeof value.summary !== 'string' || typeof value.global_settings !== 'string' ||
+        typeof value.layout_aspect !== 'string' || !validAspect(value.layout_aspect) ||
+        !Array.isArray(value.assets) || !Array.isArray(value.shots)) return '规格结构不完整；无法保存。';
+    const assetIds = new Set();
+    for (const asset of value.assets) {
+      if (!asset || typeof asset !== 'object' || !exactKeys(asset, ASSET_FIELDS) ||
+          ASSET_FIELDS.some(field => typeof asset[field] !== 'string') || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(asset.id) ||
+          assetIds.has(asset.id) || !asset.name.trim() || !safeThumbnail(asset.path)) return '资产登记无效或 ID 重复；无法保存。';
+      assetIds.add(asset.id);
+    }
+    const ids = new Set(), numbers = new Set();
+    for (const row of value.shots) {
+      if (!row || typeof row !== 'object' || !exactKeys(row, ['id', ...FIELDS, 'layout_camera']) || typeof row.id !== 'string' || !row.id ||
+          ids.has(row.id) || FIELDS.some(field => typeof row[field] !== 'string')) return '镜头标识重复或内容不完整；无法保存。';
+      ids.add(row.id);
+      const number = row.number.trim().toLocaleLowerCase();
+      if (!number || numbers.has(number)) return '每个镜头都需要不同的镜号。';
+      numbers.add(number);
+      if (row.duration_seconds.trim() && (!/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(row.duration_seconds.trim()) ||
+          !Number.isFinite(Number(row.duration_seconds)) || Number(row.duration_seconds) <= 0))
+        return '镜头时长应是大于零的秒数；未决定时留空。';
+      if (row.thumbnail && !safeThumbnail(row.thumbnail)) return '缩略图须指向项目参考资产内的图片。';
+      if (!Object.hasOwn(MARKS, row.mark)) return '镜头标记无效。';
+      if (!validCamera(row.layout_camera)) return '预览运镜须为空，或 static/linear 加两个有效裁切框。';
+    }
+    return null;
+  }
+
+  function safeThumbnail(value) {
+    if (typeof value !== 'string' || !value.startsWith('../05_参考资产/') || /[\\:%?#\x00-\x1f]/.test(value)) return false;
+    const parts = value.split('/').slice(2);
+    return parts.length > 0 && parts.every(x => x && x !== '.' && x !== '..') && /\.(png|jpe?g|webp|gif)$/i.test(value);
+  }
+
+  function selectionError(expected, selected) {
+    if (!selected || expected.name !== selected.name || expected.documentId !== selected.documentId ||
+        expected.normalized !== selected.normalized) return '所选文件与打开的当前规格不一致，请重新选择；未写入。';
+    return null;
+  }
+
+  function associationKey(documentId, href) {
+    if (typeof documentId !== 'string' || !documentId.trim()) return null;
+    try {
+      const url = new URL(href);
+      if (url.protocol !== 'file:') return null;
+      url.search = ''; url.hash = '';
+      return JSON.stringify(['kpl-file-v1', documentId, url.href]);
+    } catch (_) { return null; }
+  }
+
+  function validAssociation(record, key, documentId) {
+    return !!(record && record.schema === 1 && record.key === key && record.document_id === documentId &&
+      typeof record.association_id === 'string' && record.association_id &&
+      typeof record.last_sha256 === 'string' && /^[0-9a-f]{64}$/.test(record.last_sha256) &&
+      record.handle && record.handle.kind === 'file' && typeof record.handle.getFile === 'function');
+  }
+
+  function createHandleStore(indexedDB) {
+    function open() {
+      if (!indexedDB || typeof indexedDB.open !== 'function') return Promise.reject(new Error('storage unavailable'));
+      return new Promise((resolve, reject) => {
+        let request, settled = false;
+        try { request = indexedDB.open('kpl-file-associations', 1); }
+        catch (error) { reject(error); return; }
+        request.onupgradeneeded = () => {
+          try {
+            if (!request.result.objectStoreNames.contains('files')) request.result.createObjectStore('files', {keyPath:'key'});
+          } catch (error) {
+            if (request.transaction) {try {request.transaction.abort();} catch (_) {}}
+            if (!settled) {settled = true; reject(error);}
+          }
+        };
+        request.onerror = () => { if (!settled) {settled = true; reject(request.error || new Error('storage error'));} };
+        request.onblocked = () => { if (!settled) {settled = true; reject(new Error('storage blocked'));} };
+        request.onsuccess = () => {
+          if (settled) {request.result.close(); return;}
+          settled = true; resolve(request.result);
+        };
+      });
+    }
+    async function transaction(mode, operation) {
+      const db = await open();
+      try {
+        return await new Promise((resolve, reject) => {
+          let tx, request, result;
+          try { tx = db.transaction('files', mode); request = operation(tx.objectStore('files'), value => {result = value;}, tx); }
+          catch (error) { reject(error); return; }
+          tx.oncomplete = () => resolve(result === undefined && request ? request.result : result);
+          tx.onerror = () => reject(tx.error || (request && request.error) || new Error('storage transaction failed'));
+          tx.onabort = () => reject(tx.error || new Error('storage transaction aborted'));
+        });
+      } finally { db.close(); }
+    }
+    return {
+      get: key => transaction('readonly', store => store.get(key)),
+      put: record => transaction('readwrite', store => store.put(record)),
+      forget: (key, associationId) => transaction('readwrite', (store, setResult, tx) => {
+        const request = store.get(key);
+        request.onsuccess = () => {
+          const current = request.result;
+          if (!current || current.association_id !== associationId) {setResult(false); return;}
+          try {store.delete(key); setResult(true);} catch (_) {tx.abort();}
+        };
+        return request;
+      }),
+      updateHash: (key, associationId, oldHash, newHash) => transaction('readwrite', (store, setResult, tx) => {
+        const request = store.get(key);
+        request.onsuccess = () => {
+          const current = request.result;
+          if (!current || current.association_id !== associationId || current.last_sha256 !== oldHash) {
+            setResult(false); return;
+          }
+          try {store.put({...current, last_sha256:newHash}); setResult(true);} catch (_) {tx.abort();}
+        };
+        return request;
+      })
+    };
+  }
+
+  async function rememberAssociation(store, key, documentId, associationId, handle, name, baselineHash, hashFile) {
+    if (!key || !associationId || !handle || handle.kind !== 'file' || !/^[0-9a-f]{64}$/.test(baselineHash || ''))
+      return {status:'unavailable'};
+    try {
+      const file = await handle.getFile();
+      if (file.name !== name || await hashFile(file) !== baselineHash) return {status:'conflict'};
+      const record = {schema:1, key, document_id:documentId, association_id:associationId,
+                      handle, last_sha256:baselineHash};
+      await store.put(record);
+      return {status:'remembered', record};
+    } catch (_) { return {status:'storage_failed'}; }
+  }
+
+  async function restoreAssociation(store, key, record, expected, parseSource, hashFile, userConfirmed) {
+    if (userConfirmed !== true) return {status:'needs_confirmation'};
+    if (!validAssociation(record, key, expected.documentId)) return {status:'missing'};
+    try {
+      const current = await store.get(key);
+      if (!validAssociation(current, key, expected.documentId) || current.association_id !== record.association_id)
+        return {status:'association_changed'};
+      const handle = current.handle;
+      if (typeof handle.queryPermission !== 'function') return {status:'unavailable'};
+      let permission = await handle.queryPermission({mode:'readwrite'});
+      if (permission !== 'granted') {
+        if (typeof handle.requestPermission !== 'function') return {status:'unavailable'};
+        permission = await handle.requestPermission({mode:'readwrite'});
+      }
+      if (permission !== 'granted') return {status:'permission_denied'};
+      const file = await handle.getFile(), source = await file.text(), parsed = parseSource(source);
+      if (selectionError(expected, {name:file.name, documentId:parsed.documentId, normalized:parsed.normalized}))
+        return {status:'mismatch'};
+      const actual = await hashFile(file);
+      if (actual !== current.last_sha256) return {status:'conflict'};
+      return {status:'ready', handle, hash:actual, record:current};
+    } catch (error) {
+      if (error && error.name === 'NotFoundError') return {status:'file_unavailable'};
+      if (error && error.name === 'AbortError') return {status:'cancelled'};
+      return {status:'unavailable'};
+    }
+  }
+
+  function canEdit(value) { return value.status !== 'final' && value.confirmation !== 'confirmed'; }
+  function identityUnchanged(original, working) {
+    return ['document_id', 'version', 'status', 'confirmation', 'revision'].every(key => original[key] === working[key]);
+  }
+  function warnBeforeUnload(event, dirty) {
+    if (dirty) { event.preventDefault(); event.returnValue = ''; return true; }
+    return false;
+  }
+  function createSaveGuard() {
+    let busy = false;
+    return {begin(){if (busy) return false; busy = true; return true;}, end(){busy = false;}};
+  }
+
+  async function digestBytes(bytes, cryptoObject) {
+    if (!cryptoObject || !cryptoObject.subtle) throw new Error('当前环境无法核对文件版本，不能直接保存。');
+    const raw = await cryptoObject.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(raw), b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  function digestText(text, cryptoObject) { return digestBytes(new TextEncoder().encode(text), cryptoObject); }
+  async function digestFile(file, cryptoObject) { return digestBytes(await file.arrayBuffer(), cryptoObject); }
+
+  async function saveToHandle(handle, baselineHash, output, hashText, hashFile) {
+    let writer = null, closeAttempted = false;
+    try {
+      if (!handle || typeof handle.getFile !== 'function' || typeof handle.createWritable !== 'function')
+        return {status: 'unavailable'};
+      const permission = typeof handle.queryPermission === 'function' ? await handle.queryPermission({mode:'readwrite'}) : 'prompt';
+      const granted = permission === 'granted' ? permission :
+        (typeof handle.requestPermission === 'function' ? await handle.requestPermission({mode:'readwrite'}) : 'denied');
+      if (granted !== 'granted') return {status: 'permission_denied'};
+      const expectedOutputHash = await hashText(output);
+      if (await hashFile(await handle.getFile()) !== baselineHash) return {status: 'conflict'};
+      writer = await handle.createWritable();
+      if (await hashFile(await handle.getFile()) !== baselineHash) {
+        if (typeof writer.abort === 'function') await writer.abort();
+        return {status: 'conflict'};
+      }
+      await writer.write(output);
+      closeAttempted = true;
+      await writer.close();
+      writer = null;
+      const actual = await hashFile(await handle.getFile());
+      return actual === expectedOutputHash ? {status: 'saved', hash: actual} : {status: 'readback_mismatch'};
+    } catch (error) {
+      if (writer && typeof writer.abort === 'function') {
+        try { await writer.abort(); } catch (_) { /* do not mask original failure */ }
+      }
+      return {status: closeAttempted ? 'write_unconfirmed' : error && error.name === 'AbortError' ? 'cancelled' : 'failed'};
+    }
+  }
+
+  async function copyPrompt(text, clipboard, control) {
+    try {
+      if (!clipboard || typeof clipboard.writeText !== 'function') throw new Error('clipboard unavailable');
+      await clipboard.writeText(text);
+      return 'copied';
+    } catch (_) {
+      if (control && typeof control.focus === 'function' && typeof control.select === 'function') {
+        control.focus(); control.select();
+        return 'manual';
+      }
+      return 'unavailable';
+    }
+  }
+
+  const api = {SCHEMA, FIELDS, MARKS, plainText, encodeData, validate, safeThumbnail, selectionError, associationKey, validAssociation,
+    createHandleStore, rememberAssociation, restoreAssociation, canEdit, identityUnchanged,
+    warnBeforeUnload, createSaveGuard, digestText, digestFile, saveToHandle, copyPrompt};
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (!root.document) return;
+
+  root.document.addEventListener('DOMContentLoaded', () => {
+    const document = root.document;
+    const byId = id => document.getElementById(id);
+    const normalizedAtOpen = document.documentElement.outerHTML;
+    let data, working, handle = null, baselineHash = null, dirty = false, normalizedBaseline = normalizedAtOpen;
+    let remembered = null, linkEpoch = 0, linkBusy = false, scopeKey = null;
+    const saveGuard = createSaveGuard();
+    const status = message => { byId('kpl-status').textContent = message; };
+    const linkStatus = message => { byId('kpl-link-status').textContent = message; };
+    let indexedDB = null;
+    try { indexedDB = root.indexedDB; } catch (_) { /* storage may be disabled */ }
+    const handleStore = createHandleStore(indexedDB);
+    function beginLink() {
+      if (linkBusy) return false;
+      linkBusy = true; linkEpoch++;
+      ['kpl-select','kpl-remember','kpl-resume','kpl-forget','kpl-save'].forEach(id => {byId(id).disabled = true;});
+      return true;
+    }
+    function endLink() {
+      linkBusy = false;
+      ['kpl-select','kpl-resume','kpl-forget','kpl-save'].forEach(id => {byId(id).disabled = false;});
+      byId('kpl-remember').disabled = !handle;
+    }
+    const text = (tag, value, cls) => {
+      const element = document.createElement(tag);
+      if (cls) element.className = cls;
+      element.textContent = value || '未填写';
+      return element;
+    };
+    const normalize = source => new DOMParser().parseFromString(source, 'text/html').documentElement.outerHTML;
+    const fileName = () => {
+      try { return decodeURIComponent(root.location.pathname.split('/').pop()); }
+      catch (_) { return ''; }
+    };
+    const hashText = input => digestText(input, root.crypto);
+    const hashFile = file => digestFile(file, root.crypto);
+
+    function fieldValue(value) { return value && value.trim() ? value : '未填写'; }
+    function makeView(container, model) {
+      container.replaceChildren();
+      container.append(text('h1', model.title || '项目规格'));
+      container.append(text('p', model.summary, 'lead'));
+      container.append(text('h2', '全局设置'));
+      container.append(text('p', model.global_settings, 'preserve'));
+      const table = document.createElement('table'), head = document.createElement('thead'), hr = document.createElement('tr');
+      ['画面', '镜号', '时长', '一句话内容', '景别', '镜头运动', '标记'].forEach(label => hr.append(text('th', label)));
+      head.append(hr); table.append(head);
+      const body = document.createElement('tbody');
+      for (const row of model.shots) {
+        const tr = document.createElement('tr');
+        const imageCell = document.createElement('td');
+        if (safeThumbnail(row.thumbnail)) {
+          const img = document.createElement('img'); img.src = row.thumbnail; img.alt = row.number + ' 参考画面'; imageCell.append(img);
+        } else imageCell.append(text('span', row.thumbnail ? '路径待核查' : '未提供'));
+        tr.append(imageCell, text('td', row.number), text('td', row.duration_seconds ? row.duration_seconds + ' 秒' : '待确认'),
+          text('td', row.content), text('td', row.shot_scale), text('td', row.camera_motion), text('td', MARKS[row.mark]));
+        body.append(tr);
+      }
+      table.append(body); container.append(table);
+      if (!model.shots.length) container.append(text('p', '尚无镜头。'));
+      for (const row of model.shots) {
+        const details = document.createElement('details'), summary = document.createElement('summary');
+        summary.textContent = (row.number || '未命名镜头') + ' · ' + (row.content || '详情');
+        details.append(summary, text('h3', LABELS.description), text('p', fieldValue(plainText(row.description)), 'preserve'), text('h3', LABELS.prompt));
+        const prompt = plainText(row.prompt);
+        const area = document.createElement('textarea'); area.readOnly = true; area.value = prompt;
+        area.textContent = prompt; area.rows = Math.max(3, Math.min(12, prompt.split('\n').length + 1));
+        area.setAttribute('aria-label', (row.number || '镜头') + '的图片生成提示词');
+        const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = '复制提示词';
+        copy.dataset.copy = row.id;
+        const video = plainText(row.video_prompt);
+        const videoArea = document.createElement('textarea'); videoArea.readOnly = true; videoArea.value = video;
+        videoArea.textContent = video; videoArea.rows = Math.max(3, Math.min(12, video.split('\n').length + 1));
+        videoArea.setAttribute('aria-label', (row.number || '镜头') + '的视频提示词');
+        details.append(area, copy, text('h3', LABELS.video_prompt), videoArea);
+        container.append(details);
+      }
+      container.append(text('h2', '资产'));
+      if (!model.assets.length) container.append(text('p', '尚无登记的资产。'));
+      else {
+        const assets = document.createElement('table'), assetHead = document.createElement('thead'), headRow = document.createElement('tr');
+        ['ID', '名称', '路径'].forEach(label => headRow.append(text('th', label)));
+        assetHead.append(headRow);
+        const assetBody = document.createElement('tbody');
+        for (const asset of model.assets) {
+          const tr = document.createElement('tr'); tr.append(text('td', asset.id), text('td', asset.name), text('td', asset.path));
+          assetBody.append(tr);
+        }
+        assets.append(assetHead, assetBody); container.append(assets);
+      }
+    }
+
+    function formControl(parent, label, value, update, multiline) {
+      const wrap = document.createElement('label'); wrap.append(text('span', label));
+      const input = document.createElement(multiline ? 'textarea' : 'input');
+      if (!multiline) input.type = 'text';
+      else input.rows = 3;
+      input.value = value;
+      input.addEventListener('input', () => { update(input.value); dirty = true; status('有未保存修改。'); });
+      wrap.append(input); parent.append(wrap);
+    }
+
+    function markControl(parent, row) {
+      const wrap = document.createElement('label'); wrap.append(text('span', LABELS.mark));
+      const select = document.createElement('select');
+      for (const [value, label] of Object.entries(MARKS)) select.append(new Option(label, value, false, row.mark === value));
+      select.addEventListener('change', () => { row.mark = select.value; dirty = true; status('有未保存修改。'); });
+      wrap.append(select); parent.append(wrap);
+    }
+
+    function drawEditor() {
+      const editor = byId('kpl-editor-fields'); editor.replaceChildren();
+      formControl(editor, '项目名称', working.title, value => {working.title = value;}, false);
+      formControl(editor, '项目说明', working.summary, value => {working.summary = value;}, true);
+      formControl(editor, '全局设置（未决定可留空）', working.global_settings, value => {working.global_settings = value;}, true);
+      formControl(editor, '预览画幅（如 16:9，未决定可留空）', working.layout_aspect, value => {working.layout_aspect = value;}, false);
+      for (const row of working.shots) {
+        const group = document.createElement('fieldset');
+        group.append(text('legend', row.number || '新镜头'));
+        for (const name of FIELDS) {
+          if (name === 'mark') markControl(group, row);
+          else formControl(group, LABELS[name], row[name], value => {row[name] = value;}, MULTILINE.includes(name));
+        }
+        const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '移除这个镜头';
+        remove.addEventListener('click', () => {
+          if (!root.confirm('从当前草稿移除这个镜头？保存前可取消本次编辑。')) return;
+          working.shots = working.shots.filter(x => x.id !== row.id); dirty = true; drawEditor(); status('有未保存修改。');
+        });
+        group.append(remove); editor.append(group);
+      }
+    }
+
+    function serialize(model) {
+      const clone = document.documentElement.cloneNode(true);
+      clone.querySelector('#kpl-authoritative-data').textContent = encodeData(model);
+      clone.querySelector('title').textContent = model.title || '项目规格';
+      makeView(clone.querySelector('#kpl-view'), model);
+      clone.querySelector('#kpl-editor-fields').replaceChildren();
+      clone.querySelector('#kpl-editor').hidden = true;
+      clone.querySelector('#kpl-view').hidden = false;
+      clone.querySelector('#kpl-controls').hidden = true;
+      clone.querySelector('#kpl-status').textContent = '尚未进入编辑。';
+      clone.querySelector('#kpl-link-status').textContent = '尚未选择当前项目文件。';
+      clone.querySelector('#kpl-remember').disabled = true;
+      clone.querySelector('#kpl-resume').hidden = true;
+      clone.querySelector('#kpl-forget').hidden = true;
+      return '<!DOCTYPE html>\n' + clone.outerHTML + '\n';
+    }
+
+    function snapshot() {
+      const problem = validate(working);
+      if (problem) { status(problem); return null; }
+      if (!identityUnchanged(data, working)) {
+        status('版本或确认状态不能在页面中更改；请核对原规格。'); return null;
+      }
+      if (JSON.stringify(working) === JSON.stringify(data)) {
+        dirty = false; status('没有未保存修改。'); return null;
+      }
+      const next = JSON.parse(JSON.stringify(working));
+      next.revision = data.revision + 1;
+      return {next, html: serialize(next)};
+    }
+
+    try {
+      data = JSON.parse(byId('kpl-authoritative-data').textContent);
+      const problem = validate(data);
+      if (problem) throw new Error(problem);
+    } catch (_) { status('规格数据无效；无法进入编辑。'); return; }
+    scopeKey = associationKey(data.document_id, root.location.href);
+    makeView(byId('kpl-view'), data);
+    byId('kpl-controls').hidden = false;
+    if (!canEdit(data)) {
+      byId('kpl-edit').disabled = true;
+      status('此版本已确认或标为 final；请另建草稿版本后编辑。');
+    }
+    async function findRemembered() {
+      const epoch = linkEpoch;
+      if (!scopeKey) {linkStatus('当前页面无法记住文件；刷新后需重新选择。'); return;}
+      try {
+        const record = await handleStore.get(scopeKey);
+        if (epoch !== linkEpoch) return;
+        if (!validAssociation(record, scopeKey, data.document_id)) {
+          linkStatus('选择文件后，可选择是否记住；未保存的修改不会因刷新自动保存。'); return;
+        }
+        remembered = record;
+        byId('kpl-resume').hidden = false; byId('kpl-forget').hidden = false;
+        let permission = 'unknown';
+        try { if (typeof record.handle.queryPermission === 'function') permission = await record.handle.queryPermission({mode:'readwrite'}); }
+        catch (_) { /* request is never automatic */ }
+        if (epoch !== linkEpoch) return;
+        linkStatus(permission === 'granted'
+          ? '找到之前记住的文件。确认当前页面位置未变后点击继续；若复制或移动过，请重新选择。'
+          : '找到之前记住的文件。确认位置后点击继续，并按浏览器提示重新授权；若复制或移动过，请重新选择。');
+      } catch (_) {
+        if (epoch === linkEpoch) linkStatus('浏览器的本地关联存储不可用；刷新后需要重新选择文件。');
+      }
+    }
+    findRemembered();
+    byId('kpl-edit').addEventListener('click', () => {
+      if (!canEdit(data)) return;
+      working = JSON.parse(JSON.stringify(data)); dirty = false; drawEditor();
+      byId('kpl-view').hidden = true; byId('kpl-editor').hidden = false;
+      status('编辑中；尚无未保存修改。');
+    });
+    byId('kpl-cancel').addEventListener('click', () => {
+      if (dirty && !root.confirm('放弃本次未保存修改？')) return;
+      working = null; dirty = false; byId('kpl-editor').hidden = true; byId('kpl-view').hidden = false;
+      status('已退出编辑。');
+    });
+    byId('kpl-add').addEventListener('click', () => {
+      if (!root.crypto || typeof root.crypto.randomUUID !== 'function') { status('当前环境无法创建稳定镜头标识。'); return; }
+      const row = {id: root.crypto.randomUUID()}; FIELDS.forEach(name => {row[name] = '';}); row.layout_camera = null;
+      working.shots.push(row); dirty = true; drawEditor(); status('新增镜头尚未保存；请填写镜号。');
+    });
+    byId('kpl-select').addEventListener('click', async () => {
+      if (!beginLink()) return;
+      handle = null; baselineHash = null;
+      try {
+        if (typeof root.showOpenFilePicker !== 'function' || !root.crypto || !root.crypto.subtle) {
+          status('当前浏览器不支持直接保存。可用支持该功能的浏览器，或手动另存副本。'); return;
+        }
+        const picked = await root.showOpenFilePicker({multiple:false, types:[{description:'KPL 规格', accept:{'text/html':['.html']}}]});
+        if (!picked.length) { status('已取消选择，修改仍未保存。'); return; }
+        const chosen = picked[0], file = await chosen.getFile(), source = await file.text();
+        const parsed = new DOMParser().parseFromString(source, 'text/html');
+        const node = parsed.getElementById('kpl-authoritative-data');
+        let selectedData = null;
+        try { selectedData = node && JSON.parse(node.textContent); } catch (_) { /* invalid selection */ }
+        const mismatch = selectionError({name:fileName(), documentId:data.document_id, normalized:normalizedBaseline},
+          {name:file.name, documentId:selectedData && selectedData.document_id, normalized:normalize(source)});
+        if (mismatch) { status(mismatch); return; }
+        handle = chosen; baselineHash = await hashFile(file);
+        status('已选择同名且内容匹配的文件；请确认它位于当前项目。浏览器无法核实同名副本的目录。');
+        linkStatus(remembered
+          ? '以前记住的关联仍保留；若要改为当前选择，请点击“记住此文件”，或先忘记旧关联。'
+          : '可点击“记住此文件，下次继续编辑”；仅保存这个文件的关联，不会保存未提交的修改。');
+      } catch (error) {
+        status(error && error.name === 'AbortError' ? '已取消选择，修改仍未保存。' : '无法选择或核对文件，修改仍未保存。');
+      } finally {
+        if (!handle && remembered) {
+          byId('kpl-resume').hidden = false;
+          linkStatus('此前记住的关联仍保留；确认位置未变后可继续使用，或重新选择。');
+        }
+        endLink();
+      }
+    });
+    byId('kpl-remember').addEventListener('click', async () => {
+      if (!beginLink()) return;
+      try {
+        if (!scopeKey || !root.crypto || typeof root.crypto.randomUUID !== 'function') {
+          linkStatus('当前浏览器不能记住文件；刷新后请重新选择。'); return;
+        }
+        const saved = await rememberAssociation(handleStore, scopeKey, data.document_id,
+          root.crypto.randomUUID(), handle, fileName(), baselineHash, hashFile);
+        if (saved.status === 'remembered') {
+          remembered = saved.record;
+          byId('kpl-forget').hidden = false; byId('kpl-resume').hidden = true;
+          linkStatus('已记住这个文件；下次须确认位置未变，浏览器可能仍会要求授权。');
+        } else if (saved.status === 'conflict') linkStatus('文件内容已变化，未记住；请重新核对并选择。');
+        else linkStatus(remembered
+          ? '未更新此前的关联；当前页仍可保存，下次请核对关联或重新选择。'
+          : '无法记住文件；当前页面的保存不受影响，刷新后需重新选择。');
+      } finally {endLink();}
+    });
+    byId('kpl-resume').addEventListener('click', async () => {
+      if (!beginLink()) return;
+      try {
+        const expected = {name:fileName(), documentId:data.document_id, normalized:normalizedBaseline};
+        const restored = await restoreAssociation(handleStore, scopeKey, remembered, expected, source => {
+          const parsed = new DOMParser().parseFromString(source, 'text/html');
+          const node = parsed.getElementById('kpl-authoritative-data');
+          const saved = node && JSON.parse(node.textContent);
+          return {documentId:saved && saved.document_id, normalized:normalize(source)};
+        }, hashFile, true);
+        if (restored.status === 'ready') {
+          handle = restored.handle; baselineHash = restored.hash; remembered = restored.record;
+          byId('kpl-resume').hidden = true;
+          linkStatus('已恢复这个文件；如曾复制或移动页面，请重新选择以核对位置。');
+        } else if (restored.status === 'permission_denied' || restored.status === 'cancelled') {
+          linkStatus('未获得授权或已取消；修改未保存，可重新授权或重新选择文件。');
+        } else if (restored.status === 'conflict' || restored.status === 'mismatch') {
+          linkStatus('记住的文件与当前页面或上次保存版本不一致；已停止，需重新核对并选择文件。');
+        } else if (restored.status === 'file_unavailable') {
+          linkStatus('记住的文件不可用或可能已移动；请重新选择当前项目文件。');
+        } else if (restored.status === 'association_changed' || restored.status === 'missing') {
+          linkStatus('记住的关联已变化或被清除；请刷新核对，或重新选择文件。');
+        } else linkStatus('无法恢复关联；请重新选择当前项目文件。');
+      } finally {endLink();}
+    });
+    byId('kpl-forget').addEventListener('click', async () => {
+      if (!beginLink()) return;
+      handle = null; baselineHash = null;
+      try {
+        if (!remembered || !scopeKey || !await handleStore.forget(scopeKey, remembered.association_id)) {
+          linkStatus('关联已变化或无法清除；本页已断开，请刷新核对。'); return;
+        }
+        remembered = null; byId('kpl-resume').hidden = true; byId('kpl-forget').hidden = true;
+        linkStatus('已忘记关联并断开本页；浏览器已授予的权限需在浏览器设置中撤销。');
+      } catch (_) {
+        linkStatus('无法清除浏览器中记住的关联；本页已断开，请在浏览器中清理相关数据。');
+      } finally {endLink();}
+    });
+    byId('kpl-save').addEventListener('click', async () => {
+      if (!dirty) { status('没有未保存修改。'); return; }
+      if (!handle || !baselineHash) { status('请先选择当前项目文件；修改仍未保存。'); return; }
+      const result = snapshot(); if (!result) return;
+      if (!saveGuard.begin()) { status('正在保存，请稍候。'); return; }
+      byId('kpl-editor').querySelectorAll('input,textarea,button').forEach(element => {element.disabled = true;});
+      try {
+        const previousHash = baselineHash;
+        const saved = await saveToHandle(handle, baselineHash, result.html, hashText, hashFile);
+        if (saved.status === 'saved') {
+          data = result.next; working = JSON.parse(JSON.stringify(data)); dirty = false; baselineHash = saved.hash;
+          normalizedBaseline = normalize(result.html); makeView(byId('kpl-view'), data); drawEditor();
+          status('已写入并读回核对；相关旧检查和预演需要复核。');
+          if (remembered && scopeKey) {
+            try {
+              const same = handle === remembered.handle ||
+                (typeof handle.isSameEntry === 'function' && await handle.isSameEntry(remembered.handle));
+              if (same && await handleStore.updateHash(scopeKey, remembered.association_id, previousHash, saved.hash)) {
+                remembered = {...remembered, last_sha256:saved.hash};
+                linkStatus('文件已保存，记住的关联已更新；下次仍需确认位置及可能的授权。');
+              } else linkStatus('文件已保存，但记住的关联未更新；下次请重新选择或重新记住。');
+            } catch (_) {linkStatus('文件已保存，但浏览器未更新关联；下次请重新选择或重新记住。');}
+          }
+        } else if (saved.status === 'conflict') status('文件在编辑期间已变化，已停止覆盖。请保留当前修改并重新核对两个版本。');
+        else if (saved.status === 'readback_mismatch' || saved.status === 'write_unconfirmed') status('写入结果未确认；请先检查所选文件，勿直接重复保存。');
+        else if (saved.status === 'permission_denied' || saved.status === 'cancelled') status('未获得写入授权或已取消，修改仍未保存。');
+        else status('直接保存失败或不可用，修改仍未确认保存。');
+      } finally {
+        byId('kpl-editor').querySelectorAll('input,textarea,button').forEach(element => {element.disabled = false;});
+        saveGuard.end();
+      }
+    });
+    byId('kpl-download').addEventListener('click', () => {
+      if (!dirty) { status('没有需要另存的修改。'); return; }
+      const result = snapshot(); if (!result) return;
+      try {
+        const url = URL.createObjectURL(new Blob([result.html], {type:'text/html;charset=utf-8'}));
+        const link = document.createElement('a'); link.href = url; link.download = fileName() || '项目规格.html';
+        link.click(); root.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        status('已请求另存副本；请确认浏览器保存结果。项目原文件尚未回写。');
+      } catch (_) { status('另存副本失败；修改仍未保存。'); }
+    });
+    byId('kpl-view').addEventListener('click', async event => {
+      const button = event.target.closest('button[data-copy]'); if (!button) return;
+      const row = data.shots.find(x => x.id === button.dataset.copy), area = button.parentElement.querySelector('textarea');
+      if (!row) return;
+      const result = await copyPrompt(plainText(row.prompt), root.navigator && root.navigator.clipboard, area);
+      status(result === 'copied' ? '提示词已复制。' : result === 'manual' ? '已选中提示词，请手动复制。' : '无法自动复制，请手动选择提示词。');
+    });
+    root.addEventListener('beforeunload', event => {
+      warnBeforeUnload(event, dirty);
+    });
+  });
+})(typeof globalThis !== 'undefined' ? globalThis : this);

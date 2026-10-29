@@ -25,7 +25,7 @@
 1. 阅读当前用户指令、唯一规格、真实文件或服务状态、已有确认和待办；按实际项目定位素材，不把提示词或目录名当现成文件。对仍运行/不确定的任务先查原任务 ID、结果与现有文件，不自动重发。旧规格没有结构化状态时先照原格式读取；不静默迁移或覆盖。
 2. 将需要实现的用户要求标为稳定 ID，记可核对的来源位置、确认状态及范围；把任务输入/输出、需求、依赖和实际版本连起来。格式与字段见 [规格模板](../assets/creative-spec.md)。记录适用性及“不适用”的具体理由，缺证据记未验证，不能用默认值伪造通过。
 3. 检查当前可用的读文档、看图片像素、原速看视频/听音频、生成及版本查询能力。缺哪项只阻塞对应的验收或依赖它的操作；继续无关文本工作。不要假装生成器支持某模式，不因没有能力擅自安装、购买或上传。
-4. 可选运行 `python <KPL目录>/scripts/kpl_check.py <项目>/creative-spec.md`，读取 `next_candidates`、阻塞原因、版本和 `trace_checks_required`。脚本只检查显式结构、哈希、片段与依赖，候选并非授权；它**不会验证实际观看、语义或视觉正确性**。使用任何先前的审查记录前核验工具调用／可追溯记录；不可核验就重新打开当前文件，不能用记录里的自述代替。
+4. 新项目运行 `python <KPL目录>/scripts/kpl_check.py <当前用户规格.kpldoc> --state <项目>/.kpl/state/project-state.json --allow-root <项目>`，已有 HTML 仍传原规格，读取 `next_candidates`、阻塞原因、版本和 `trace_checks_required`。旧 Markdown 状态块仍可只读检查。脚本只检查显式结构、哈希、片段与依赖，候选并非授权；它**不会验证实际观看、语义或视觉正确性**。使用任何先前的审查记录前核验工具调用／可追溯记录；不可核验就重新打开当前文件，不能用记录里的自述代替。
 5. 在依赖与权限满足后选第一项合适任务：已存在的输出先对照当前版本检查，不自动重生；确无输出才按已授权范围执行。执行后读取真实返回和产物，按 [自检](creative-review.md) 核对，记录需求 ID、文件哈希/版本、范围、工具记录、具体观察、结论与问题。之后再次检查受影响状态；局部失败只修相关项。
 6. 暂停而不是猜测：关键输入/确认缺失、能力不足、结果不确定、需改用户锁定的事件/时长，或超出本次授权的生成/费用。默认每个产物最多初次尝试加两次有针对性的修订；用户已有预算优先。每次先指出具体失败机制并检查已有任务，反复无改进或预算耗尽就停止，保留最佳版本和证据并请求必要决定；不无限重试或全片重生。
 
@@ -62,7 +62,7 @@
 完成检查后，`summary` 必须含 `conclusion/finding/impact/coverage/next_step` 五段短文本；将它们写入本阶段实际报告文件，将该文件按 `kind:document` 登记为 artifact，并在 `report` 记 `artifact` 与真实 `sha256`。`delivery` 填 `generated_only`，或在实际发给用户后填 `claimed_user_visible` 并记可查的 `delivery_trace`；脚本只报告送达未确认，不能凭作者填写冒充送达。第 5 阶段还要把本阶段报告的实际 `read_text` 证据写进 `evidence`。对每个阶段先填好实际检查、报告和结论，运行下面的命令取得该阶段 `basis`，再记入该阶段并重跑；不要把示例当真实证据。受阻/未验证需 `reason`，严重上游问题用 `blocks` 指出受影响的后续阶段。
 
 ```sh
-python "<KPL目录>/scripts/kpl_check.py" "<审查记录或现有规格.md>" --review
+python "<KPL目录>/scripts/kpl_check.py" "<当前用户规格.kpldoc>" --state "<项目>/.kpl/state/project-state.json" --allow-root "<项目>" --review
 ```
 
 看 `review_round.next_stage` 和各阶段 `action`：缺报告先补报告，中断恢复先读真实记录与文件，不能重报通过或重复做已有工作。`recorded_pass` 仅说明记录形状和版本一致，仍需核验真实读取/观看和送达；`recorded_unverified`、`recorded_blocked`、`recorded_failed` 均不是通过。旧规格无审查块仍可只读打开；在项目审查中 `--review` 明示缺少轮次，不会把空状态当通过。上游输入、原始要求、明确回答、报告或检查内容变化时，其基准和相关下游基准失效；先局部复核，不重做无关制作任务。
@@ -75,7 +75,7 @@ python "<KPL目录>/scripts/kpl_check.py" "<审查记录或现有规格.md>" --r
 {
   "version": 1,
   "requirements": [{"id": "R1", "text": "S01 时长两秒", "source": "用户消息的实际位置", "constraints": {"duration_seconds": 2}}],
-  "artifacts": [{"id": "D1", "kind": "document", "path": "shot.md", "sha256": null}],
+  "artifacts": [{"id": "D1", "kind": "document", "path": "../03_分镜设计/01_分镜脚本_v001_draft.html", "sha256": null}],
   "source_audits": [],
   "tasks": [{"id": "T1", "phase": "shot_spec", "operation": "write", "action": "编写并检查 S01", "status": "pending", "depends_on": [], "requirements": ["R1"], "inputs": [], "outputs": ["D1"], "shots": ["S01"], "required_reviews": ["document"], "claims": [], "reviews": []}],
   "cuts": [],
@@ -86,11 +86,11 @@ python "<KPL目录>/scripts/kpl_check.py" "<审查记录或现有规格.md>" --r
 将 `<KPL目录>` 换成当前加载技能的实际目录，项目路径换成真实位置：
 
 ```sh
-python "<KPL目录>/scripts/kpl_check.py" "<项目>/creative-spec.md"
-python "<KPL目录>/scripts/kpl_check.py" --hash "<项目>/shot.md"
+python "<KPL目录>/scripts/kpl_check.py" "<当前用户规格.kpldoc>" --state "<项目>/.kpl/state/project-state.json" --allow-root "<项目>"
+python "<KPL目录>/scripts/kpl_check.py" --hash "<项目>/03_分镜设计/01_分镜脚本_v001_draft.html"
 ```
 
-第一条只读检查并给出每项 `basis` 和候选动作；第二条计算实际文件 SHA256。Agent 创建并读回 `shot.md` 后，把真实哈希填入 `D1`，把逐需求检查写入 T1 的 `claims`：例如 `{"requirement":"R1","artifact":"D1","excerpt":"文件中实际存在的片段","values":{"duration_seconds":2}}`。再次运行检查获得当前 `basis`，再在 T1 的 `reviews` 追加本次真实记录：
+第一条只读检查并给出每项 `basis` 和候选动作；第二条计算实际文件 SHA256。Agent 创建并读回用户分镜 HTML 后，把真实哈希填入 `D1`，把逐需求检查写入 T1 的 `claims`：例如 `{"requirement":"R1","artifact":"D1","excerpt":"文件中实际存在的片段","values":{"duration_seconds":2}}`。再次运行检查获得当前 `basis`，再在 T1 的 `reviews` 追加本次真实记录：
 
 ```json
 {"id":"V1","kind":"document","decision":"passed","basis":"本次检查返回的实际basis","evidence":[{"artifact":"D1","sha256":"真实文件哈希","method":"read_text","trace":"可追溯的实际读取调用或记录","observation":"实际读到的范围与对照结果"}]}
@@ -124,7 +124,7 @@ python "<KPL目录>/scripts/kpl_check.py" --hash "<项目>/shot.md"
 
 ## 一个规格，三种状态
 
-先读取已有剧本、分镜、参考、批准记录及项目规范，复用有效结论。规格可采用 [creative-spec.md](../assets/creative-spec.md)，只保留当前相关项：意图/范围、时长画幅与风格、角色/场景/道具及版本和状态、镜头编号/起终态、参考职责、视频模式及理由、验收条件、未决问题。
+先读取已有剧本、分镜、参考、批准记录及项目规范，复用有效结论。新项目使用 [用户 `.kpldoc` 规格](project-structure.md)，已有 HTML 仍是原项目规格；内部可参考 [creative-spec.md](../assets/creative-spec.md) 的字段，只保留当前相关项：意图/范围、时长画幅与风格、角色/场景/道具及版本和状态、镜头编号/起终态、参考职责、视频模式及理由、验收条件、未决问题。
 
 - 已确认：明确记录用户选定的内容、适用范围及可核查依据；确认“角色A v2”不意味着场景、服装或所有后续版本也通过。
 - 建议：代理提出的方向和默认候选，不能写成已锁定。

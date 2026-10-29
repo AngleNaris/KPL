@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-mode="dark" data-accent="amber">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KPL 规格编辑器</title>
+<!--KPL_STYLE_START--><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="app.css"><!--KPL_STYLE_END-->
+</head>
+<body>
+<svg class="icon-sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z M14 3v4h4 M9 12h6 M9 16h6"/></symbol>
+  <symbol id="i-table" viewBox="0 0 24 24"><path d="M3 5h18v14H3z M3 10h18 M3 15h18 M9 5v14"/></symbol>
+  <symbol id="i-timeline" viewBox="0 0 24 24"><path d="M3 3v18 M6 5h7v4H6z M10 10h7v4h-7z M14 15h7v4h-7z"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><path d="M5 11h14v10H5z M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+  <symbol id="i-unlock" viewBox="0 0 24 24"><path d="M5 11h14v10H5z M8 11V7a4 4 0 0 1 7.5-2"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M4 4h13l3 3v13H4z M8 4v5h8V4 M8 20v-6h8v6"/></symbol>
+  <symbol id="i-display" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18z M12 3a9 9 0 0 1 0 18"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z M12 11v6 M12 7.5v.5"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><path d="M3 5h18v14H3z M3 16l5-5 4 4 3-3 6 6 M15.5 8.5v.5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2z M12 10v5 M12 17.5v.5"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 0C12.8 8 16 11.2 24 12C16 12.8 12.8 16 12 24C11.2 16 8 12.8 0 12C8 11.2 11.2 8 12 0Z"/></symbol>
+  <symbol id="i-mark-none" viewBox="0 0 24 24"><path d="M5 5h14v14H5z" stroke-dasharray="2 3"/></symbol>
+  <symbol id="i-mark-done" viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></symbol>
+  <symbol id="i-mark-revise" viewBox="0 0 24 24"><path d="M5 21V4 M5 4h13l-3 4.5 3 4.5H5"/></symbol>
+  <symbol id="i-mark-wip" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z M12 3v18"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></symbol>
+  <symbol id="i-mark-question" viewBox="0 0 24 24"><path d="M8.5 9a3.5 3.5 0 1 1 5 3.2c-1 .5-1.5 1.2-1.5 2.3v.5 M12 18.5v.5"/></symbol>
+  <symbol id="i-mark-hold" viewBox="0 0 24 24"><path d="M8 5v14 M16 5v14"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 4v16 M17 4v16"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.5v.7 M12 16.5v.5"/></symbol>
+  <symbol id="i-zoom-in" viewBox="0 0 24 24"><path d="M10 3a7 7 0 1 0 0 14a7 7 0 1 0 0-14z M15 15l6 6 M7 10h6 M10 7v6"/></symbol>
+  <symbol id="i-zoom-out" viewBox="0 0 24 24"><path d="M10 3a7 7 0 1 0 0 14a7 7 0 1 0 0-14z M15 15l6 6 M7 10h6"/></symbol>
+  <symbol id="i-zoom-fit" viewBox="0 0 24 24"><path d="M3 5v14 M21 5v14 M7 12h10 M7 12l3-3 M7 12l3 3 M17 12l-3-3 M17 12l-3 3"/></symbol>
+</svg>
+
+<div class="app" id="app">
+  <header class="app-bar">
+    <svg class="icon" aria-hidden="true"><use href="#i-doc"/></svg>
+    <h1 class="app-title" id="doc-title"></h1>
+    <p class="app-meta" id="doc-meta"></p>
+    <div class="app-bar-end">
+      <button type="button" class="btn btn-quiet" id="display-trigger" aria-expanded="false" aria-controls="display-panel">
+        <svg class="icon" aria-hidden="true"><use href="#i-display"/></svg><span>显示</span>
+      </button>
+      <div class="popover" id="display-panel" hidden>
+        <fieldset class="choice-group">
+          <legend class="label">模式</legend>
+          <label class="choice"><input type="radio" name="mode" value="system"><span>跟随系统</span></label>
+          <label class="choice"><input type="radio" name="mode" value="light"><span>浅色</span></label>
+          <label class="choice"><input type="radio" name="mode" value="dark"><span>深色</span></label>
+        </fieldset>
+        <fieldset class="choice-group">
+          <legend class="label">主题色</legend>
+          <label class="choice"><input type="radio" name="accent" value="amber"><i class="swatch" data-swatch="amber"></i><span>钨丝琥珀</span></label>
+          <label class="choice"><input type="radio" name="accent" value="red"><i class="swatch" data-swatch="red"></i><span>录制红</span></label>
+          <label class="choice"><input type="radio" name="accent" value="teal"><i class="swatch" data-swatch="teal"></i><span>示波青</span></label>
+          <label class="choice"><input type="radio" name="accent" value="blue"><i class="swatch" data-swatch="blue"></i><span>冷光蓝</span></label>
+        </fieldset>
+      </div>
+    </div>
+  </header>
+
+  <nav class="toolbar" aria-label="视图与操作">
+    <div class="tabs" role="tablist" aria-label="视图">
+      <button type="button" role="tab" class="tab" id="tab-table" aria-controls="view-table" aria-selected="true">
+        <svg class="icon" aria-hidden="true"><use href="#i-table"/></svg><span>表格</span>
+      </button>
+      <button type="button" role="tab" class="tab" id="tab-timeline" aria-controls="view-timeline" aria-selected="false" tabindex="-1">
+        <svg class="icon" aria-hidden="true"><use href="#i-timeline"/></svg><span>Layout 时间线</span>
+      </button>
+    </div>
+    <div class="toolbar-end">
+      <p class="dirty-mark" id="dirty-mark" hidden>未保存修改</p>
+      <button type="button" class="btn" id="edit-toggle">
+        <svg class="icon" aria-hidden="true"><use href="#i-unlock"/></svg><span>解锁编辑</span>
+      </button>
+      <button type="button" class="btn btn-primary" id="save" disabled>
+        <svg class="icon" aria-hidden="true"><use href="#i-save"/></svg><span>保存</span><kbd>Ctrl+S</kbd>
+      </button>
+    </div>
+  </nav>
+
+  <main class="workspace">
+    <section class="view" id="view-table" role="tabpanel" aria-labelledby="tab-table">
+      <div class="table-scroll">
+        <table class="shot-table">
+          <colgroup><col class="c-thumb"><col class="c-id"><col class="c-dur"><col class="c-content"><col class="c-scale"><col class="c-motion"><col class="c-assets"><col class="c-mark"></colgroup>
+          <thead><tr>
+            <th scope="col"><span class="visually-hidden">画面</span></th><th scope="col">镜号</th><th scope="col" class="num">时长</th><th scope="col">一句话内容</th>
+            <th scope="col">景别</th><th scope="col">镜头运动</th><th scope="col" class="num">资产</th><th scope="col" class="center">标记</th>
+          </tr></thead>
+          <tbody id="shot-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="view" id="view-timeline" role="tabpanel" aria-labelledby="tab-timeline" hidden>
+      <section class="monitor" aria-label="节奏预览">
+        <div class="monitor-stage" id="monitor-stage">
+          <div class="monitor-frame" id="monitor-frame"><canvas id="monitor-canvas" role="img" aria-label="当前镜头预览"></canvas></div>
+        </div>
+        <div class="transport">
+          <p class="monitor-caption"><span class="mono" id="monitor-shot"></span> <span id="monitor-text"></span></p>
+          <div class="transport-center">
+            <span class="timecode mono" id="timecode"></span>
+            <button type="button" class="btn" id="play-toggle" aria-keyshortcuts="Space"></button>
+          </div>
+          <div class="transport-end">
+            <input class="cell-input mono" id="aspect-input" autocomplete="off" spellcheck="false" placeholder="宽:高" aria-label="自定义画幅" hidden>
+            <button type="button" class="btn btn-quiet" id="aspect-trigger" aria-haspopup="menu" aria-expanded="false">
+              <span class="aspect-label">画幅</span><span class="mono" id="aspect-value"></span><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg>
+            </button>
+          </div>
+        </div>
+      </section>
+      <div class="splitter" id="splitter" role="separator" aria-orientation="horizontal" aria-label="调整监视器与时间线的高度" tabindex="0"></div>
+      <section class="timeline-panel" aria-label="时间线">
+        <div class="timeline-tools">
+          <button type="button" class="btn btn-quiet btn-icon" id="help-trigger" title="说明与快捷键" aria-expanded="false" aria-controls="help-panel"><svg class="icon" aria-hidden="true"><use href="#i-help"/></svg><span class="visually-hidden">说明与快捷键</span></button>
+          <span class="tools-gap"></span>
+          <button type="button" class="btn btn-quiet btn-icon" id="zoom-out" title="缩小（-）" aria-keyshortcuts="-"><svg class="icon" aria-hidden="true"><use href="#i-zoom-out"/></svg><span class="visually-hidden">缩小</span></button>
+          <button type="button" class="btn btn-quiet btn-icon" id="zoom-fit" title="适配全部（\）" aria-keyshortcuts="\"><svg class="icon" aria-hidden="true"><use href="#i-zoom-fit"/></svg><span class="visually-hidden">适配全部</span></button>
+          <button type="button" class="btn btn-quiet btn-icon" id="zoom-in" title="放大（=）" aria-keyshortcuts="="><svg class="icon" aria-hidden="true"><use href="#i-zoom-in"/></svg><span class="visually-hidden">放大</span></button>
+        </div>
+        <div class="timeline-scroll" id="timeline-scroll">
+          <div class="timeline" id="timeline">
+            <div class="ruler" id="ruler"></div>
+            <div class="track" id="track" role="group" aria-label="镜头时间线"></div>
+            <div class="playhead" id="playhead" aria-hidden="true"></div>
+            <div class="drop-mark" id="drop-mark" aria-hidden="true" hidden></div>
+          </div>
+        </div>
+        <div class="timeline-nav" id="timeline-nav" aria-hidden="true"><div class="timeline-nav-thumb" id="timeline-nav-thumb"></div></div>
+        <section class="pending-lane" id="pending-lane" hidden aria-labelledby="pending-title">
+          <h3 class="label" id="pending-title">时长待确认</h3>
+          <div class="pending-list" id="pending-list"></div>
+        </section>
+      </section>
+    </section>
+
+    <div class="splitter splitter-v" id="aside-splitter" role="separator" aria-orientation="vertical" aria-label="调整详情栏宽度" aria-controls="detail" tabindex="0"></div>
+    <aside class="detail" id="detail" aria-labelledby="detail-title"></aside>
+  </main>
+
+  <footer class="status-bar">
+    <p id="status" role="status" aria-live="polite"></p>
+    <p class="status-facts" id="facts"></p>
+  </footer>
+</div>
+
+<div class="edit-fx" id="edit-fx" aria-hidden="true"><i></i><i></i><i></i><i></i><svg><use href="#i-spark"/></svg><svg><use href="#i-spark"/></svg><svg><use href="#i-spark"/></svg><svg><use href="#i-spark"/></svg><svg><use href="#i-spark"/></svg><svg><use href="#i-spark"/></svg><svg><use href="#i-spark"/></svg></div>
+<dialog class="dialog" id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-text">
+  <h2 class="dialog-title" id="confirm-title">有未保存的修改</h2>
+  <p id="confirm-text"></p>
+  <div class="dialog-actions">
+    <button type="button" class="btn" data-choice="cancel">取消</button>
+    <button type="button" class="btn" data-choice="discard">放弃修改</button>
+    <button type="button" class="btn btn-primary" data-choice="save">保存</button>
+  </div>
+</dialog>
+<div class="menu" id="popup-menu" role="menu" hidden></div>
+<section class="popover help-panel" id="help-panel" aria-labelledby="help-title" tabindex="-1" hidden>
+  <h2 class="label" id="help-title">时间线说明</h2>
+  <p>节奏预演：按真实时长播放静态图，只有二维裁切运镜与硬切，不是成片。</p>
+  <p>没有时长的镜头放在“时长待确认”，不参与预览；解锁后可拖到轨道上（先给 2 秒），或在表格里填写时长。</p>
+  <dl class="keys">
+    <dt><kbd>空格</kbd></dt><dd>播放 / 暂停</dd>
+    <dt>拖动标尺</dt><dd>定位播放头</dd>
+    <dt>滚轮</dt><dd>横向滚动</dd>
+    <dt><kbd>Ctrl</kbd>/<kbd>Alt</kbd>+滚轮</dt><dd>以指针处缩放</dd>
+    <dt><kbd>=</kbd> <kbd>-</kbd></dt><dd>放大 / 缩小</dd>
+    <dt><kbd>\</kbd></dt><dd>适配全部</dd>
+  </dl>
+  <h3 class="label">解锁编辑后</h3>
+  <dl class="keys">
+    <dt>拖动片段</dt><dd>调整顺序，镜号按新顺序重编</dd>
+    <dt>拖右边缘</dt><dd>调整时长（0.1 秒吸附）</dd>
+    <dt><kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd></dt><dd>与相邻片段交换顺序</dd>
+    <dt><kbd>Shift</kbd>+<kbd>←</kbd>/<kbd>→</kbd></dt><dd>时长 ±0.1 秒</dd>
+  </dl>
+</section>
+<div class="peek" id="asset-peek" role="tooltip" hidden>
+  <div class="peek-frame"><img id="peek-img" alt=""></div>
+  <p class="peek-name"><span class="mono" id="peek-id"></span><span id="peek-label"></span></p>
+</div>
+
+<!--KPL_DATA_START--><script type="application/json" id="kpl-authoritative-data">
+{"schema": "kpl-user-spec-v2", "document_id": "synthetic-noodle-shop", "version": "v001", "status": "draft", "confirmation": "unconfirmed", "revision": 2, "title": "清晨面馆（合成示例）", "summary": "一家面馆迎接第一位顾客。", "global_settings": "画幅 16:9，1920×1080，24 fps；仅用于效果图。",
+  "layout_aspect": "16:9",
+ "assets":[
+  {"id": "A01", "name": "店面", "path": "../05_参考资产/01_店面_idA01_v001_draft.png"},
+  {"id": "A02", "name": "街景", "path": "../05_参考资产/02_街景_idA02_v001_draft.png"},
+  {"id": "A03", "name": "厨师", "path": "../05_参考资产/03_厨师_idA03_v001_draft.png"},
+  {"id": "A04", "name": "锅具套件", "path": "../05_参考资产/04_锅具套件_idA04_v001_draft.png"},
+  {"id": "A05", "name": "灶台", "path": "../05_参考资产/05_灶台_idA05_v001_draft.png"},
+  {"id": "A06", "name": "筷子", "path": "../05_参考资产/06_筷子_idA06_v001_draft.png"},
+  {"id": "A07", "name": "面条", "path": "../05_参考资产/07_面条_idA07_v001_draft.png"},
+  {"id": "A08", "name": "顾客", "path": "../05_参考资产/08_顾客_idA08_v001_draft.png"},
+  {"id": "A09", "name": "店门", "path": "../05_参考资产/09_店门_idA09_v001_draft.png"},
+  {"id": "A10", "name": "瓷碗", "path": "../05_参考资产/10_瓷碗_idA10_v001_draft.png"},
+  {"id": "A11", "name": "店内场景", "path": "../05_参考资产/11_店内场景_idA11_v001_draft.png"}
+ ],
+ "shots":[
+  {"id": "S01", "number": "S01", "duration_seconds": "2.0", "thumbnail": "../05_参考资产/12_参考画面_idS01_v001_draft.png", "content": "清晨，街角面馆亮起灯。", "shot_scale": "远景", "camera_motion": "固定", "description": "{场景:天刚亮，@{街景} 仍是冷蓝色调}，{动态:@{店面} 的招牌灯先亮起}，{风格:暖光落在湿润的路面上}。", "prompt": "{镜头:远景，平视}，{场景:@{店面} 招牌灯亮起，@{街景} 湿润路面}，{风格:胶片颗粒，低饱和，清晨冷光与暖色灯牌对比}", "video_prompt": "{镜头:远景，固定机位}，{动态:@{店面} 的招牌灯逐盏亮起}，{风格:清晨冷光慢慢转暖}", "mark": "done", "layout_camera": null},
+  {"id": "S02", "number": "S02", "duration_seconds": "3.0", "thumbnail": "../05_参考资产/12_参考画面_idS02_v001_draft.png", "content": "厨师在灶前翻炒，锅铲轻碰锅沿。", "shot_scale": "中近景", "camera_motion": "固定", "description": "{动态:@{厨师} 站在 @{灶台} 前翻炒，@{锅具套件} 中的锅铲轻碰锅沿}，{场景:蒸汽在灯下升起}。", "prompt": "{镜头:中近景，略俯拍}，{动态:@{厨师} 在 @{灶台} 前翻炒，手持 @{锅具套件}}，{风格:顶光与蒸汽逆光}", "video_prompt": "{镜头:中近景，固定机位}，{动态:@{厨师} 连续翻炒两下，锅铲轻碰锅沿}，{场景:蒸汽上升}", "mark": "wip", "layout_camera": null},
+  {"id": "S03", "number": "S03", "duration_seconds": "1.0", "thumbnail": "../05_参考资产/12_参考画面_idS03_v001_draft.png", "content": "筷子从热汤中挑起一束面。", "shot_scale": "特写", "camera_motion": "固定", "description": "{动态:@{筷子} 从热汤中挑起一束 @{面条}，汤汁沿面条滴落}。", "prompt": "{镜头:特写}，{动态:@{筷子} 挑起 @{面条}，汤汁滴落}，{风格:浅景深，奶油质感高光}", "video_prompt": "{镜头:特写}，{动态:@{筷子} 缓慢挑起 @{面条}，汤汁滴回碗中}", "mark": "", "layout_camera": null},
+  {"id": "S04", "number": "S04", "duration_seconds": "2.0", "thumbnail": "../05_参考资产/12_参考画面_idS04_v001_draft.png", "content": "顾客推门走进面馆。", "shot_scale": "中景", "camera_motion": "缓慢推近", "description": "{动态:@{顾客} 推开 @{店门} 走进来}，{场景:门上的风铃轻晃}。", "prompt": "{镜头:中景，缓慢推近}，{动态:@{顾客} 推开 @{店门} 走进面馆}", "video_prompt": "{镜头:中景，缓慢推近}，{动态:@{顾客} 推门进入，风铃晃动}", "mark": "revise", "layout_camera": {"type": "linear", "start_crop": [0, 0, 1, 1], "end_crop": [0.15, 0.15, 0.85, 0.85]}},
+  {"id": "S05", "number": "S05", "duration_seconds": "1.0", "thumbnail": "", "content": "厨师抬眼向顾客点头。", "shot_scale": "近景", "camera_motion": "固定", "description": "{动态:@{厨师} 抬眼，向门口点头示意}。", "prompt": "{镜头:近景，平视}，{动态:@{厨师} 抬眼点头}", "video_prompt": "{镜头:近景}，{动态:@{厨师} 抬眼点头}", "mark": "", "layout_camera": null},
+  {"id": "S06", "number": "S06", "duration_seconds": "3.0", "thumbnail": "../05_参考资产/12_参考画面_idS06_v001_draft.png", "content": "厨师把煮好的面盛进瓷碗。", "shot_scale": "近景", "camera_motion": "固定", "description": "{动态:@{厨师} 把煮好的 @{面条} 盛进 @{瓷碗}}，身上系着 @{围裙}。", "prompt": "{镜头:近景}，{动态:@{厨师} 将 @{面条} 盛入 @{瓷碗}}，{风格:侧窗晨光}", "video_prompt": "{镜头:近景}，{动态:@{厨师} 将 @{面条} 盛入 @{瓷碗}，热气升起}", "mark": "", "layout_camera": null},
+  {"id": "S07", "number": "S07", "duration_seconds": "2.0", "thumbnail": "../05_参考资产/12_参考画面_idS07_v001_draft.png", "content": "顾客伸手接过桌上的面碗。", "shot_scale": "近景", "camera_motion": "轻微下摇", "description": "{动态:@{顾客} 伸手接过桌上的 @{瓷碗}}。", "prompt": "{镜头:近景，轻微下摇}，{动态:@{顾客} 接过 @{瓷碗}}", "video_prompt": "{镜头:近景，轻微下摇}，{动态:@{顾客} 双手接过 @{瓷碗}}", "mark": "question", "layout_camera": {"type": "linear", "start_crop": [0.1, 0, 0.9, 0.8], "end_crop": [0.1, 0.2, 0.9, 1]}},
+  {"id": "S08", "number": "S08", "duration_seconds": "4.0", "thumbnail": "../05_参考资产/12_参考画面_idS08_v001_draft.png", "content": "顾客坐下，厨师回到灶台。", "shot_scale": "全景", "camera_motion": "缓慢横移", "description": "{动态:@{顾客} 坐下，@{厨师} 回到 @{灶台}}，{场景:@{店内场景} 全貌}。", "prompt": "{镜头:全景，缓慢横移}，{场景:@{店内场景}}，{动态:@{顾客} 坐下，@{厨师} 回到灶台}，{风格:胶片颗粒，低饱和}", "video_prompt": "{镜头:全景，缓慢横移}，{动态:@{顾客} 坐下，@{厨师} 回到灶台}，{风格:胶片颗粒}", "mark": "hold", "layout_camera": {"type": "linear", "start_crop": [0, 0.1, 0.8, 0.9], "end_crop": [0.2, 0.1, 1, 0.9]}}
+ ]}
+</script><!--KPL_DATA_END-->
+<!--KPL_SCRIPT_START--><script src="app.js"></script><!--KPL_SCRIPT_END-->
+</body>
+</html>

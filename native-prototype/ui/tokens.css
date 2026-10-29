@@ -1,0 +1,113 @@
+/* KPL 编辑器设计令牌：组件只读取这里的名字。
+   模式由 <html data-mode> 决定（system | light | dark），颜色用 light-dark() 并列浅色/深色取值；
+   主题色由 <html data-accent> 决定（amber | red | teal | blue）。几何一律直角。 */
+
+:root {
+  color-scheme: dark;
+
+  /* 字体：界面一套无衬线，数字与时码用等宽。 */
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, "Microsoft YaHei UI", monospace;
+
+  /* 字号：中文正文 16px；辅助标签不低于 13px。 */
+  --fs-label: 13px;
+  --fs-small: 14px;
+  --fs-body: 16px;
+  --fs-title: 18px;
+  --fs-heading: 22px;
+  --lh-tight: 1.3;
+  --lh-body: 1.6;
+  --tracking-label: 0.08em;
+
+  /* 间距与几何 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --bar-h: 48px;
+  --control-h: 36px;
+  --aside-w: 360px;
+  --hair: 1px;
+  --indicator: 3px;
+  --panel-h: 280px;
+
+  /* 表面：大面积低饱和石墨灰阶 */
+  --bg: light-dark(#EEEDEA, #0E0E10);
+  --surface: light-dark(#F8F8F6, #16161A);
+  --sunken: light-dark(#E4E3DF, #0A0A0C);
+  --raised: light-dark(#E9E8E4, #202025);
+  --hover: light-dark(#E0DFDA, #26262C);
+
+  /* 文本：三级 */
+  --text: light-dark(#141414, #ECEAE5);
+  --text-2: light-dark(#46453F, #B5B3AD);
+  --text-3: light-dark(#5E5D57, #8F8D88);
+  --text-disabled: light-dark(#9A9993, #5E5D59);
+
+  /* 线：rule 只做分隔；line 是控件边界（>= 3:1） */
+  --rule: light-dark(#D3D1CB, #2A2A30);
+  --line: light-dark(#86847D, #6E6E76);
+  --line-strong: light-dark(#141414, #ECEAE5);
+
+  /* 状态：只用于真实存在的状态 */
+  --danger: light-dark(#B42318, #FF7A6E);
+  --warning: light-dark(#8A5300, #F2B84B);
+  --success: light-dark(#1B6E3E, #63CE90);
+  --info: light-dark(#2A5DB0, #84B4F7);
+
+  /* 镜头标记：复用状态色 */
+  --mark-done: var(--success);
+  --mark-revise: var(--danger);
+  --mark-wip: var(--warning);
+  --mark-question: var(--info);
+  --mark-hold: var(--text-3);
+
+  /* 描述/提示词分段染色：镜头、风格（含光线色彩）、场景、动态。刻意低饱和，只有素材引用用强调色；
+     文字色对 surface 与 sunken 均 >= 4.5:1 */
+  --seg-camera: light-dark(#455569, #A4B3C6);
+  --seg-style: light-dark(#684D61, #C6AFC0);
+  --seg-scene: light-dark(#4A5C44, #AFC1A6);
+  --seg-action: light-dark(#66543A, #CDBB9F);
+
+  /* 动效：所有进入都有对应的退出 */
+  --dur-fast: 120ms;
+  --dur: 180ms;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+
+  /* 缩略图 */
+  --thumb-w: 96px;
+  --peek-w: 280px;
+  --peek-large-w: 480px;
+
+  --scrim: light-dark(rgb(20 20 20 / 0.48), rgb(0 0 0 / 0.64));
+  --shadow: light-dark(rgb(20 20 20 / 0.16), rgb(0 0 0 / 0.6));
+  --glint: light-dark(rgb(255 255 255 / 0.95), rgb(255 255 255 / 0.5));
+  --glint-edge: light-dark(rgb(20 20 20 / 0.07), rgb(255 255 255 / 0.08));
+  --glint-glow: light-dark(rgb(20 20 20 / 0.45), rgb(255 255 255 / 0.85));
+
+  /* 主题色见文末；accent 同时用于文字、指示与实心填充，需对 surface 与 on-accent 均达标。 */
+  --on-accent: light-dark(#FFFFFF, #0E0E10);
+
+  --accent-tint: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  --accent-tint-strong: color-mix(in srgb, var(--accent) 24%, var(--surface));
+  --focus-bg: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+:root[data-mode="light"] { color-scheme: light; }
+:root[data-mode="system"] { color-scheme: light dark; }
+
+/* [data-swatch] 让主题选择器里的色块直接读取同一取值。 */
+:root, [data-swatch="amber"] {
+  --accent: light-dark(#8F5400, #F0A830);
+}
+:root[data-accent="red"], [data-swatch="red"] {
+  --accent: light-dark(#B8261C, #FF6B5E);
+}
+:root[data-accent="teal"], [data-swatch="teal"] {
+  --accent: light-dark(#0D6B5F, #3FCBB2);
+}
+:root[data-accent="blue"], [data-swatch="blue"] {
+  --accent: light-dark(#1D5BBF, #79AEFF);
+}

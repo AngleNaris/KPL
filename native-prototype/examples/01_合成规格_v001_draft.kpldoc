@@ -1,0 +1,71 @@
+{
+  "schema": "kpl-user-spec-v2",
+  "document_id": "synthetic-native-example-001",
+  "version": "v001",
+  "status": "draft",
+  "confirmation": "unconfirmed",
+  "revision": 1,
+  "title": "合成示例：清晨面馆",
+  "summary": "以下镜头和参数均为虚构的编辑器练习。",
+  "global_settings": "仅合成示例：画幅 16:9；分辨率与帧率未设定。",
+  "layout_aspect": "16:9",
+  "assets": [],
+  "shots": [
+    {
+      "id": "synthetic-01",
+      "number": "S01",
+      "duration_seconds": "2.5",
+      "thumbnail": "",
+      "content": "清晨，面馆门口的灯亮起来。",
+      "description": "清晨，面馆门口的灯亮起来。",
+      "shot_scale": "全景",
+      "camera_motion": "固定",
+      "prompt": "仅合成练习：清晨，面馆门口的灯亮起来。",
+      "video_prompt": "仅合成练习：清晨，面馆门口的灯亮起来。",
+      "mark": "",
+      "layout_camera": null
+    },
+    {
+      "id": "synthetic-02",
+      "number": "S02",
+      "duration_seconds": "1.9",
+      "thumbnail": "",
+      "content": "店员把碗放到柜台上。",
+      "description": "店员把碗放到柜台上。",
+      "shot_scale": "中近景",
+      "camera_motion": "固定",
+      "prompt": "仅合成练习：店员把碗放到柜台上。",
+      "video_prompt": "仅合成练习：店员把碗放到柜台上。",
+      "mark": "",
+      "layout_camera": null
+    },
+    {
+      "id": "synthetic-03",
+      "number": "S03",
+      "duration_seconds": "3.2",
+      "thumbnail": "",
+      "content": "顾客坐下，抬头望向店员。",
+      "description": "顾客坐下，抬头望向店员。",
+      "shot_scale": "中景",
+      "camera_motion": "缓慢平移",
+      "prompt": "仅合成练习：顾客坐下，抬头望向店员。",
+      "video_prompt": "仅合成练习：顾客坐下，抬头望向店员。",
+      "mark": "",
+      "layout_camera": null
+    },
+    {
+      "id": "synthetic-04",
+      "number": "S04",
+      "duration_seconds": "1.2",
+      "thumbnail": "",
+      "content": "热汤倒进碗里，白雾升起。",
+      "description": "热汤倒进碗里，白雾升起。",
+      "shot_scale": "近景",
+      "camera_motion": "固定",
+      "prompt": "仅合成练习：热汤倒进碗里，白雾升起。",
+      "video_prompt": "仅合成练习：热汤倒进碗里，白雾升起。",
+      "mark": "",
+      "layout_camera": null
+    }
+  ]
+}
