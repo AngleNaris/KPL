@@ -6,3 +6,6 @@ __pycache__/
 native-prototype/build/
 native-prototype/dist/
 native-prototype/ui/preview-assets/
+
+# 图标生成脚本输出的检查图，不随技能分发
+native-prototype/assets/kpl-preview.png

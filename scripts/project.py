@@ -222,7 +222,7 @@ def seconds_from_frames(frames, fps):
     duration = Fraction(int(frames), 1) / rate
     return {'ok': True, 'seconds': round(float(duration), 9), 'seconds_exact': str(duration),
             'source': {'legacy_frames': int(frames), 'fps': str(rate)},
-            'note': '只读转换，原记录未修改；需核对原始时间基及确认依据。'}
+            'note': '只读转换，原记录未修改；需核对原始时间基及确认依据。结果不能直接写入规格的 duration_seconds：规格只精确到 0.1 秒，须按累计切点取 0.1 秒整再相减。'}
 
 
 def _relative_sources(root, index):

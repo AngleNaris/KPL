@@ -8,26 +8,38 @@
 - 表格显示缩略图、镜号、秒数、一句话内容、景别、镜头运动、已解析引用的资产数及用户标记；详情有描述和图片／视频提示词。时间线与表格共用数据，按秒显示时长，可选镜头、调整顺序与时长，并以静态图、硬切和已有二维裁切参数预览。它不是生成视频或真实表演，不能证明动作、速度、景深或动态验收通过。
 - 资产路径按文本限定在项目的 `05_参考资产`；只有 `@{…}` 唯一解析的引用计数，缺失或歧义需处理。宿主未逐级核查资产子目录是否为链接或 junction，虚拟主机的链接行为也未实测：仅使用可信项目及普通目录，不能把它当严格文件隔离。缩略图与引用标记不证明已经上传、模型绑定或视觉验收；按审片流程实际打开总览及必要原图。
 - 画幅未填时画面预览暂显示 16:9，不能视为确认。待定时长镜头拖到轨道会写入 2 秒，没有用户明确时长依据时仍需询问。拖动重排会重编显示镜号，但稳定 ID 保留；按 ID 核对其他引用，不能把新编号当新身份。`done` 等是用户标记，不是自动验收证据。
+- 品牌与更新检查：程序和窗口带 KPL 图标，顶栏显示 KPL 标识；“关于”弹层写明版本（宿主常量 `AppVersion`）、作者繁星之子卡萨蒂亚和仓库 `AngleNaris/KPL`。启动后宿主在后台静默请求 GitHub 最新 Release（5 秒超时，失败不提示；页面本身仍不能联网），仅在有更高版本时于顶栏提示。点击提示只打开固定的仓库发布页，不下载、不安装；离线不影响使用。
+- 缩略图缓存：镜头多、参考图大（单张可达数十 MB）时，界面不直接载入原图。打开规格后宿主在后台把引用到的图片缩成 480 像素宽的 JPEG，缓存在当前用户的 `%LOCALAPPDATA%\KPL\thumbs\`（项目之外，不写入项目目录；文件名由相对路径、大小和修改时间的哈希决定，原图不变就不重做，可随时删除重建），并以只读虚拟主机提供给页面。生成期间状态栏显示“正在生成缩略图 n/总数”；未生成好的图只显示占位、不载入原图，.NET 无法解码的格式（如 webp）同样保持占位。缩略图只是预览，不代表原图已核对；需要核对画面时仍按审片流程打开原图。
+- 时长精度：镜头时长只能精确到 0.1 秒，检查脚本和编辑器保存都会拒绝更多位小数（写法见 [用户规格格式](spec-format.md)）。旧文件里的多位小数时长，编辑器打开时会按累计切点规整显示；只读状态下不算改动、不写回，用户解锁后才标为未保存，保存后才生效，规整后需重新核对受影响的切点与卡点。描述超过 300 字时编辑器只提示、不阻止保存，但检查脚本会整体拒读这份规格；时长或描述超限的文件如何处理见 [项目目录与版本](project-structure.md#超限规格的整改)。
+- 窗口：默认约 16:9，关闭时记住窗口大小和最大化状态（与显示、布局偏好同存于 `%LOCALAPPDATA%\KPL\prefs.json`）；时间线面板默认取最小高度。
 - 文件保存前检查基线，外部修改或另一个窗口先保存会阻止覆盖；写入后读回。冲突、只读、忙碌、权限失败和写入结果不确定时保留／核实实际文件，再决定如何处理；不要盲目重试或覆盖。已确认/最终版本不能在编辑器原地修改，修订须另建草稿并保留确认依据。
 
 ## 首次准备与交付
 
-1. 找到实际的共享 `KPL规格编辑器.exe`（而不是为每个文档复制程序），确认文件、相邻的 WebView2 组件、Windows .NET Framework 4.8 与 WebView2 运行时。源码仓库不附带运行时或编译后的程序；`native-prototype/build.py` 默认使用现有本地 C# 编译器及 PowerToys 中的 WebView2 组件，也可用 `--csc`、`--core`、`--loader` 指定已有的匹配版本和 x64 组件，用 `--out-dir` 选择空输出目录；不会下载、安装依赖或覆盖已有输出。依赖缺失时说明所需组件，不能偷偷安装。Windows 的运行时与分发方式参考 [Microsoft WebView2 官方文档](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution)。
+1. 默认使用随技能分发的共享程序 `native-prototype/bin/win-x64/KPL规格编辑器.exe`，不为每份文档复制程序。该目录包含配套 WebView2 SDK 组件和构建清单；运行 `python "<KPL>/scripts/editor_bundle.py"` 检查程序和构建输入是否匹配。清单是变更检查，不是数字签名或安全认证。程序需要 64 位 Windows、已安装的 .NET Framework 4.8 和 WebView2 Runtime；运行时不随包附带，缺失时说明并等待用户决定，不自动下载或安装。完整源码、构建方式和组件许可见 `native-prototype/源码与构建.html`；构建默认使用包内 SDK 组件，也可用 `--csc`、`--core`、`--loader` 指定其他已有组件。输出到新的空目录，不覆盖共享程序。运行时参考 [Microsoft 官方文档](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution)。
 2. 在**目标桌面用户账户**下运行只读检查；`whoami` 必须与桌面账户一致，隔离执行账户的注册表不能代表桌面账户：
 
    ```powershell
-   python "<KPL>/scripts/editor_ready.py" check --exe "<实际编辑器.exe>" --desktop-account "<桌面账户，格式同 whoami>"
+   python "<KPL>/scripts/editor_ready.py" check --desktop-account "<桌面账户，格式同 whoami>"
    ```
 
-   `ready` 表示文件、运行时位置和 Windows 解析的 `.kpldoc` 打开命令检查符合，**不是实测界面或保存通过**。`wrong_user_context` 需在正确用户上下文检查；`editor_missing`、`runtime_missing`、`association_conflict`、`protected_choice` 和 `inspection_error` 分别说明原因。不能以隔离账户的 `needs_setup` 判定用户桌面未设置。
-3. `ready` 就跳过设置。如果是该桌面账户下的 `needs_setup`，且本次任务明确授权首次配置，才运行下列操作；关联仅限当前用户 `.kpldoc`，不改 `.html`。`authorization-ref` 是可追溯记录，不会自行证明授权。存在其他关联或 Windows 受保护选择时不覆盖，让用户在系统打开方式中决定；不绕过系统提示。设置失败或结果不明确先检查实际状态再决定后续，不能重复写入。
+   结果的 `plan` 是不写入的下一步建议，并列出当前目标、新目标和旧程序是否存在。`ready` 表示文件、运行时位置和 Windows 解析的 `.kpldoc` 打开命令检查符合，**不是实测界面或保存通过**。`wrong_user_context` 需在正确用户上下文检查；`editor_missing`、`runtime_missing`、`association_conflict`、`protected_choice` 和 `inspection_error` 分别说明原因。不能以隔离账户的 `needs_setup` 判定用户桌面未设置。
+3. `ready` 就跳过设置。如果是该桌面账户下的 `needs_setup`，先取得此机器首次设置的明确授权，再运行下列操作；关联仅限当前用户 `.kpldoc`，不改 `.html`。`authorization-ref` 只是记录授权来源，文字本身不能证明授权。
 
    ```powershell
-   python "<KPL>/scripts/editor_ready.py" setup --exe "<实际编辑器.exe>" --desktop-account "<桌面账户>" --authorization-ref "<本次明确授权的来源>"
+   python "<KPL>/scripts/editor_ready.py" setup --desktop-account "<桌面账户>" --authorization-ref "<本次明确授权的来源>"
    ```
 
-   现有脚本 `native-prototype/file-association.ps1 -Action Inspect` 可只读查看，`-Action Uninstall` 只撤销其仍完整属于该原型的关联；Windows 自己的受保护选择要由用户在系统设置处理。不要改变安全策略或将关联指向临时测试副本。
-4. 完成准备后交付项目中唯一的 `.kpldoc`，告知用户双击、解锁、编辑、保存；按需提供 `native_doc.py to-html "<当前规格.kpldoc>" "<不存在的查看副本.html>"` 供普通浏览器查看。查看副本应放在规格同一目录以保持 `../05_参考资产/` 引用；移动副本后图片可能无法显示。副本标注不会同步，不可选作当前规格。编辑器不可用时，解释原因；与用户商定后，新项目可选 `init --format html`，或先交付明确的只读查看副本。浏览器编辑和权限的限制见 [用户可读交付](user-delivery.md)。不要把副本或失败当作已写回项目。
+   如果 `plan.next_step` 是 `authorize_owned_rebind`，向用户展示 `current_target` 和 `requested_target`，得到针对这两个路径的明确替换授权后才运行：
+
+   ```powershell
+   python "<KPL>/scripts/editor_ready.py" setup --desktop-account "<桌面账户>" --expected-current "<检查结果中的原路径>" --authorization-ref "<用户明确同意替换此关联的来源>"
+   ```
+
+   仅完整匹配 KPL 自有记录、无受保护选择、原路径未变化时可重绑定；自有判断依据注册表标记和结构，不是不可伪造的所有权证明。旧文件不存在也可明确授权修复。其他应用的关联、额外记录或 `protected_choice` 不自动覆盖，交由用户在 Windows“默认应用/打开方式”中选择打包编辑器。若 PowerShell 策略、签名或权限拒绝脚本，保留策略和关联，向用户说明并使用系统界面；不得绕过策略。设置后以再次检查的 Windows 实际打开命令为准，只有返回 `ready` 才报告绑定成功；失败、超时或结果不明先核对实际状态，不盲目重试。
+
+   需要撤回自有重绑定时，旧程序仍可用且用户明确同意的情况下，可将上面命令中的 `--exe` 指向旧程序、`--expected-current` 指向当前程序并提供新的授权来源；同样先检查并复核。若只需移除本工具仍完整拥有的关联，得到明确授权后可运行 `native-prototype/file-association.ps1 -Action Uninstall -Executable "<当前关联程序>"`；受保护选择交由用户在系统设置处理。脚本或策略拒绝时不删除、不改安全设置。用户自编译程序也可用 `--exe` 指定，不能自动替换现有关联或将关联指向临时测试副本。
+4. 完成准备后交付项目中唯一的 `.kpldoc`，告知用户双击、解锁、编辑、保存；按需提供 `python "<KPL>/native-prototype/native_doc.py" to-html "<当前规格.kpldoc>" "<不存在的查看副本.html>"` 供普通浏览器查看。查看副本应放在规格同一目录以保持 `../05_参考资产/` 引用；移动副本后图片可能无法显示。副本标注不会同步，不可选作当前规格。编辑器不可用时，解释原因；与用户商定后，新项目可选 `init --format html`，或先交付明确的只读查看副本。浏览器编辑和权限的限制见 [用户可读交付](user-delivery.md)。不要把副本或失败当作已写回项目。
 
 ## 用户修改后继续
 

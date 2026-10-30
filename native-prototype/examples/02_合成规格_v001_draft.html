@@ -173,9 +173,9 @@ textarea{white-space:pre-wrap;overflow-wrap:anywhere;min-height:72px}button{font
       const number = row.number.trim().toLocaleLowerCase();
       if (!number || numbers.has(number)) return '每个镜头都需要不同的镜号。';
       numbers.add(number);
-      if (row.duration_seconds.trim() && (!/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(row.duration_seconds.trim()) ||
+      if (row.duration_seconds.trim() && (!/^(?:\d+(?:\.\d)?|\.\d)$/.test(row.duration_seconds.trim()) ||
           !Number.isFinite(Number(row.duration_seconds)) || Number(row.duration_seconds) <= 0))
-        return '镜头时长应是大于零的秒数；未决定时留空。';
+        return '镜头时长应是大于零的秒数，最多精确到 0.1 秒；未决定时留空。';
       if (row.thumbnail && !safeThumbnail(row.thumbnail)) return '缩略图须指向项目参考资产内的图片。';
       if (!Object.hasOwn(MARKS, row.mark)) return '镜头标记无效。';
       if (!validCamera(row.layout_camera)) return '预览运镜须为空，或 static/linear 加两个有效裁切框。';

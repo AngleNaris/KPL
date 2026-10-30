@@ -245,7 +245,9 @@ textarea.cell-input { resize: none; field-sizing: content; overflow: hidden; }
 .transport { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: var(--space-4); }
 .monitor-caption { min-inline-size: 0; font-size: var(--fs-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .monitor-caption .mono { font-weight: 600; }
-.transport-center { display: flex; align-items: center; gap: var(--space-3); }
+.transport-center { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--space-3); }
+#timecode { justify-self: end; }
+#timecode-total { justify-self: start; }
 .transport-end { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-4); min-inline-size: 0; }
 .timecode { font-size: var(--fs-title); color: var(--accent); font-variant-numeric: tabular-nums; }
 #aspect-trigger { gap: var(--space-2); padding-inline: var(--space-2); }
@@ -347,6 +349,8 @@ textarea.cell-input { resize: none; field-sizing: content; overflow: hidden; }
 .clip:hover .clip-handle, .clip:focus-visible .clip-handle, .timeline.is-dragging .clip-handle { opacity: 1; }
 .clip.is-dragging { z-index: 2; cursor: grabbing; opacity: 0.85; box-shadow: 0 8px 24px var(--shadow); transition: none; }
 .timeline.is-dragging, .timeline.is-dragging * { cursor: grabbing; user-select: none; }
+/* 标尺与分隔条的按住拖动：期间整页不可选中文字 */
+html.is-scrubbing, html.is-scrubbing * { user-select: none; }
 .drop-mark, .playhead { position: absolute; inset-block: 0; inline-size: 2px; translate: -1px 0; pointer-events: none; z-index: 3; }
 .drop-mark { background: var(--accent); }
 .playhead { background: var(--text); }
@@ -380,6 +384,7 @@ textarea.cell-input { resize: none; field-sizing: content; overflow: hidden; }
 .block-title > span:first-child { flex: 1; }
 .block-title, .field > .label { font-size: var(--fs-label); letter-spacing: var(--tracking-label); color: var(--text-3); font-weight: 600; }
 .count { font: var(--fs-label) var(--font-mono); color: var(--text-3); }
+.count.is-over { color: var(--warning); }
 .field-empty { color: var(--text-3); }
 .hint { font-size: var(--fs-label); color: var(--text-3); }
 
@@ -565,3 +570,14 @@ textarea.cell-input { resize: none; field-sizing: content; overflow: hidden; }
 .keys { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-4); }
 .keys dt { color: var(--text); white-space: nowrap; }
 .keys kbd { padding: 0 var(--space-1); margin: 0; border: var(--hair) solid var(--line); font-weight: 400; }
+
+/* 品牌标识、关于弹层与新版本提示 */
+.brand { display: flex; align-items: center; flex: none; }
+.brand-mark { display: block; block-size: 22px; inline-size: 82.5px; }
+.logo-k { fill: var(--logo-1); }
+.logo-a { fill: var(--logo-2); }
+.logo-c { fill: var(--logo-3); }
+.about-panel { inline-size: 300px; gap: var(--space-3); font-size: var(--fs-small); color: var(--text-2); }
+.about-name { color: var(--text); font-weight: 600; }
+.update-badge { color: var(--accent); }
+.update-badge[hidden] { display: none; }

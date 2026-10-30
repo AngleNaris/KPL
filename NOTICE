@@ -3,7 +3,8 @@ Copyright 2026 KPL contributors.
 
 This repository is a reorganized and modified skill, not an upstream release.
 Modified files: SKILL.md and all files under references/.
-Modification dates: 2026-10-22, 2026-10-23, 2026-10-26 and 2026-10-27.
+Modification dates: 2026-10-22, 2026-10-23, 2026-10-26, 2026-10-27, 2026-10-29 and 2026-10-30.
+KPL's own additions also cover scripts/, assets/ and native-prototype/ (the native editor with its icon and logo).
 The lightweight creative-spec workflow and confirmation rules added on
 2026-10-23 are independently written for KPL's user requirements.
 The creative-review guidance and scoped reference, framing and on-screen
@@ -37,10 +38,27 @@ general creative rules, not the local host's execution instructions.
 The license appendix contains a generic copyright placeholder, not a filled
 OpenAI copyright statement; no new upstream notice is fabricated here.
 
-KPL's original additions and modifications are offered under Apache License 2.0
-(LICENSE). This does not remove or replace the MIT terms covering adapted
-DirectorSKILL material, or the Apache conditions covering other upstream material.
-Both license sets and their notices must remain with redistributed derivatives.
+visual-skills video guidance
+Source: https://github.com/smixs/visual-skills
+Revision: 92be33a5a73325fb3d8e0c73b22744b114e2a90e
+Copyright (c) 2026 Serge Shima; licensed under CC BY 4.0:
+https://creativecommons.org/licenses/by/4.0/
+Full license: LICENSES/visual-skills-CC-BY-4.0.txt.
+Adapted in 2026-10-30 for KPL: concise natural-language video direction and
+reference-role guidance; fixed detail counts and platform capability claims omitted.
+No upstream endorsement is implied.
+
+Microsoft.Web.WebView2 SDK 1.0.3179.45
+The native editor package contains Microsoft.Web.WebView2.Core.dll and the
+Windows x64 WebView2Loader.dll; copyright (C) Microsoft Corporation.
+The SDK's BSD-3-Clause notice and disclaimer are reproduced in
+LICENSES/Microsoft.Web.WebView2-1.0.3179.45.txt.
+Source: https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.3179.45/License
+The separately installed WebView2 Runtime is not included in this package.
+
+KPL's original additions are offered under Apache License 2.0 (LICENSE).
+This does not remove the MIT, Apache or CC BY 4.0 conditions applying to
+adapted upstream material; their licenses and notices remain with derivatives.
 
 MiniMax and ByteDance/OpenAI official documentation is cited for interface facts
 and necessary syntax. Full documentation, sample films and media assets are not

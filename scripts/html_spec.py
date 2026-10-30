@@ -27,6 +27,7 @@ ASSET_FIELDS = ('id', 'name', 'path')
 MARKS = {'': '未标记', 'done': '完成', 'revise': '待修改', 'wip': '进行中', 'question': '有疑问', 'hold': '搁置'}
 ASSET_DIR = '../05_参考资产/'
 # 描述与提示词中的分段标记 {类别:内容}；只读视图只显示内容（格式见 references/spec-format.md）
+DESCRIPTION_LIMIT = 300
 SEGMENT = re.compile(r'\{(?:镜头|风格|场景|动态)[:：]((?:@\{[^{}]*\}|[^{}])*)\}')
 HERE = Path(__file__).resolve().parent.parent
 APP = HERE / 'assets' / 'user-spec.js'
@@ -105,8 +106,10 @@ def validate(model):
         numbers.add(number)
         duration = row['duration_seconds'].strip()
         if duration:
-            if not re.fullmatch(r'(?:\d+(?:\.\d+)?|\.\d+)', duration):
-                raise ValueError('duration must be a positive number in seconds')
+            # 时长只精确到 0.1 秒；从帧数或音乐换算时按累计切点取 0.1 秒整，不要逐镜四舍五入以免总长漂移
+            if not re.fullmatch(r'(?:\d+(?:\.\d)?|\.\d)', duration):
+                raise ValueError('duration must be positive seconds with at most one decimal place (0.1 s), '
+                                 'e.g. 1.4; round cumulative cut points to 0.1 s instead of each shot: ' + duration)
             try:
                 value = Decimal(duration)
                 if not value.is_finite() or value <= 0:
@@ -115,6 +118,11 @@ def validate(model):
                 raise ValueError('invalid duration') from exc
             if len(value.as_tuple().digits) > 28 or value.as_tuple().exponent < -28:
                 raise ValueError('duration is outside the supported range')
+        # 详细描述只概括画面，按显示字数（不计分段标记）限 300 字；来源、运镜原文、工作流等记录放项目状态文件
+        if len(plain_text(row['description'])) > DESCRIPTION_LIMIT:
+            raise ValueError('description of %s has %d visible characters; limit is %d. Describe only what the picture '
+                             'shows; keep sources, camera notes, workflow paths and review records in project state files, '
+                             'not in the spec' % (row['number'], len(plain_text(row['description'])), DESCRIPTION_LIMIT))
         if row['thumbnail'] and not safe_thumbnail(row['thumbnail']):
             raise ValueError('thumbnail must be inside project reference assets')
         if row['mark'] not in MARKS:

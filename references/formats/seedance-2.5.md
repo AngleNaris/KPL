@@ -2,6 +2,8 @@
 
 核查日期：2026-10-22。中文整理与格式摘录，不继承上游的写作教学或端点默认值。通用内容先按 [视频模块](../video.md) 完成。
 
+KPL 将本页作为在线 Seedance 的界面参考，按需核对真实标签与槽位；不提供本地 Seedance 专项路由，也不据此断言模型的实际部署能力。
+
 ## 表面与输入
 
 [ByteDance 官方模型页](https://seed.bytedance.com/en/seedance2_5)及[发布说明](https://seed.bytedance.com/en/blog/one-take-creation-flexible-referencing-introducing-seedance-2-5)确认文本、多模态参考、编辑和续接能力。[Dreamina 官方使用说明](https://dreamina.capcut.com/seedance/how-to-use-seedance-2-5)说明在 Omni reference 中上传资产，用 `@` 标签关联。

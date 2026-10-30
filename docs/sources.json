@@ -116,6 +116,35 @@
           "sha256": "4dd13869245e356246a5b770723247bbb80a8f07a181d1d3d873a1734297cdb9"
         }
       ]
+    },
+    {
+      "id": "visual-skills-video",
+      "url": "https://github.com/smixs/visual-skills",
+      "commit": "92be33a5a73325fb3d8e0c73b22744b114e2a90e",
+      "license": "CC-BY-4.0",
+      "checkedOn": "2026-10-30",
+      "readFiles": [
+        {
+          "path": "video/SKILL.md",
+          "sha256": "a9c0b2b00eadd1c6b46669a939639eba4b7ef6aa250f25dccb09f9166e81ec0d"
+        },
+        {
+          "path": "video/references/universal-rules.md",
+          "sha256": "f9d51fc2e456a37d7984a42378f1d072288a83df5bca2d4688c8eccba6f3ce3d"
+        },
+        {
+          "path": "video/references/dramaturgy.md",
+          "sha256": "12d9dcbea7d1050f35af919d0b704dd8db83f22c9070dbae34aeea96faf51bdc"
+        },
+        {
+          "path": "NOTICE",
+          "sha256": "de856e49bba89750eb1d3d155f201c5bbbef05e55afaa6942ed4e0937ad44fbf"
+        },
+        {
+          "path": "LICENSE",
+          "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"
+        }
+      ]
     }
   ],
   "local": [
@@ -172,6 +201,10 @@
     {
       "path": "LICENSES/imagegen-Apache-2.0.txt",
       "sha256": "44e03f7e263eb3ad256440c1eeab5e49168baff5a78ecef9a5447261cf3a91bc"
+    },
+    {
+      "path": "LICENSES/visual-skills-CC-BY-4.0.txt",
+      "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"
     }
   ],
   "readScope": "Main skills fully read; references read for relevant format/directing sections; unneeded model chapters are not redistributed.",

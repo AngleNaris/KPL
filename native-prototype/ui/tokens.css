@@ -31,7 +31,7 @@
   --aside-w: 360px;
   --hair: 1px;
   --indicator: 3px;
-  --panel-h: 280px;
+  --panel-h: 200px;   /* 时间线面板默认取最小高度，与 app.js 的 PANEL_MIN 一致 */
 
   /* 表面：大面积低饱和石墨灰阶 */
   --bg: light-dark(#EEEDEA, #0E0E10);
@@ -86,6 +86,10 @@
   --glint: light-dark(rgb(255 255 255 / 0.95), rgb(255 255 255 / 0.5));
   --glint-edge: light-dark(rgb(20 20 20 / 0.07), rgb(255 255 255 / 0.08));
   --glint-glow: light-dark(rgb(20 20 20 / 0.45), rgb(255 255 255 / 0.85));
+  /* 横版标识三层配色：无底色，随模式与主题色变化（深一档的主题色 / 主题色 / 暖白） */
+  --logo-1: color-mix(in srgb, var(--accent) 78%, black);
+  --logo-2: var(--accent);
+  --logo-3: color-mix(in srgb, var(--text) 82%, var(--accent));
 
   /* 主题色见文末；accent 同时用于文字、指示与实心填充，需对 surface 与 on-accent 均达标。 */
   --on-accent: light-dark(#FFFFFF, #0E0E10);

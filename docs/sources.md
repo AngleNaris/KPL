@@ -1,11 +1,12 @@
 # 来源、版本与发布边界
 
-核查日：2026-10-22。可复核的逐文件 SHA-256 和许可指纹见 [sources.json](sources.json)。固定 commit 用于复现此次读取，不能代表后续产品界面一直不变。
+原有来源核查日：2026-10-22；新增 visual-skills 核查日：2026-10-30。可复核的逐文件 SHA-256 和许可指纹见 [sources.json](sources.json)。固定 commit 用于复现读取，不能代表后续产品界面一直不变。
 
 | 来源 | 固定版本 | 用途与读取范围 |
 |---|---|---|
 | [video-prompting-skill](https://github.com/Square-Zero-Labs/video-prompting-skill/tree/8d72999ebe8bde390a658d3f6f8a79558b73bd5c) | `8d72999ebe8bde390a658d3f6f8a79558b73bd5c` | 主 SKILL、H3/Seedance 2.5 格式章、角色设定相关参考；Apache-2.0 |
 | [DirectorSKILL](https://github.com/wuwangzhang1216/DirectorSKILL/tree/c65ae0d14457053efb1e354c7e7f7e120d97fad1) | `c65ae0d14457053efb1e354c7e7f7e120d97fad1` | 主 SKILL；MV、调度、镜头语言、连续性、声音、剪辑相关段落；MIT，Copyright (c) 2026 wangzhang-wu |
+| [visual-skills/video](https://github.com/smixs/visual-skills/tree/92be33a5a73325fb3d8e0c73b22744b114e2a90e/video) | `92be33a5a73325fb3d8e0c73b22744b114e2a90e` | Serge Shima；CC BY 4.0。改编导演式自然语言和参考职责方法，按需而非强制固定细节或戏剧结构；未继承模型能力、价格、长度及英文默认等未经核实主张。 |
 | [MiniMax 官方 H3](https://github.com/MiniMax-AI/MiniMax-H3/tree/d21241f0a4b3acbb34c97dae47fa417b7065e438/skills/h3-prompt-writing) | `d21241f0a4b3acbb34c97dae47fa417b7065e438` | 官方 SKILL、base-en/ref-en 格式契约，只摘接口事实与必要语法 |
 | [OpenAI imagegen 公开对应来源](https://github.com/openai/skills/tree/49f948faa9258a0c61caceaf225e179651397431/skills/.system/imagegen) | `49f948faa9258a0c61caceaf225e179651397431` | 仅检查公开来源、文件差异和 Apache-2.0 许可，未以其替代用户指定的本地读取 |
 
@@ -31,4 +32,4 @@
 
 ## 许可处理
 
-三份来源许可证完整逐字保留在 [LICENSES](../LICENSES/)，原始许可文件字节的 SHA-256 可由验证脚本比对。根 [LICENSE](../LICENSE) 约束 KPL 原创新增和改写，不能取消 DirectorSKILL 的 MIT 条件；[NOTICE](../NOTICE)保留原版权/归属及修改声明。未发现两个主要上游固定版本包含另行 NOTICE。官方文档的全文和媒体不随仓库分发。
+Apache、MIT 及 visual-skills 的 CC BY 4.0 许可完整保留在 [LICENSES](../LICENSES/)，原始许可文件字节的 SHA-256 可由验证脚本比对。根 [LICENSE](../LICENSE) 约束 KPL 原创新增，不能取消其他来源的许可条件；[NOTICE](../NOTICE)保留原版权、归属及改编说明。官方文档的全文和媒体不随仓库分发。

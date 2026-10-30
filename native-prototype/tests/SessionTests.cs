@@ -99,6 +99,27 @@ internal static class SessionTests
                 bool refused = false; try { DocumentSession.Validate(broken); } catch (InvalidDataException) { refused = true; }
                 Check(refused, "invalid v2 model accepted: " + bad);
             }
+            // 时长精度：保存与新文件只接受 0.1 秒；打开旧文件时放宽，交给界面规整后再保存
+            foreach (string duration in new[] { "1.25", "1.4166666666666667", "0.05" })
+            {
+                var model = Clone(new DocumentSession(file).InitialJson);
+                ((Dictionary<string, object>)((object[])model["shots"])[0])["duration_seconds"] = duration;
+                bool strict = false; try { DocumentSession.Validate(model); } catch (InvalidDataException) { strict = true; }
+                Check(strict, "strict validation accepted duration " + duration);
+                bool lenient = true; try { DocumentSession.Validate(model, false); } catch (InvalidDataException) { lenient = false; }
+                Check(lenient, "lenient open rejected duration " + duration);
+            }
+            string legacy = Path.Combine(root, "04_旧时长_v001_draft.kpldoc");
+            var old = Clone(new DocumentSession(file).InitialJson);
+            ((Dictionary<string, object>)((object[])old["shots"])[0])["duration_seconds"] = "1.4166666666666667";
+            File.WriteAllText(legacy, JsonTools.Serializer().Serialize(old), new UTF8Encoding(false));
+            var legacySession = new DocumentSession(legacy);
+            bool unsavedRejected = false; try { legacySession.Save(Next(legacySession, "原样保存"), null); } catch (InvalidDataException) { unsavedRejected = true; }
+            Check(unsavedRejected, "saving an unnormalized duration was allowed");
+            var fixedModel = Next(legacySession, "规整后保存");
+            ((Dictionary<string, object>)((object[])fixedModel["shots"])[0])["duration_seconds"] = "1.4";
+            Check(legacySession.Save(fixedModel, null) == "saved", "normalized duration not saved");
+            Check((string)((Dictionary<string, object>)((object[])Clone(new DocumentSession(legacy).InitialJson)["shots"])[0])["duration_seconds"] == "1.4", "normalized duration lost");
             string extra = Path.Combine(root, "03_伪文件_v001_draft.kpldoc");
             File.WriteAllText(extra, "{\"schema\":\"kpl-user-spec-v2\",\"evil\":\"x\"}");
             bool invalidRejected = false; try { new DocumentSession(extra); } catch { invalidRejected = true; }

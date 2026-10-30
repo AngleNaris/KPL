@@ -61,9 +61,14 @@ class HtmlSpecTests(unittest.TestCase):
         self.assertIn('white-space:pre-wrap', output)
 
     def test_input_validation_and_no_path_escape(self):
-        for duration in ('-1', '0', '1e3', 'NaN'):
+        for duration in ('-1', '0', '1e3', 'NaN', '1.25', '1.4166666666666667'):
             changed = copy.deepcopy(self.model); changed['shots'][0]['duration_seconds'] = duration
             with self.assertRaises(ValueError): html_spec.build(changed)
+        # 描述按显示字数限 300 字，分段标记不计
+        changed = copy.deepcopy(self.model); changed['shots'][0]['description'] = '{场景:' + '画' * 300 + '}'
+        html_spec.build(changed)
+        changed['shots'][0]['description'] = '画' * 301
+        with self.assertRaises(ValueError): html_spec.build(changed)
         for thumb in ('../../secret.png', '../05_参考资产/../x.png', 'https://example.com/x.png'):
             changed = copy.deepcopy(self.model); changed['shots'][0]['thumbnail'] = thumb
             with self.assertRaises(ValueError): html_spec.build(changed)

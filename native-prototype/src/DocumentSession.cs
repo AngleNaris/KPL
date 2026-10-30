@@ -30,7 +30,7 @@ internal sealed class DocumentSession
             throw new InvalidDataException("暂不打开链接文件，请选择原始规格文件。");
         byte[] bytes = ReadBounded(path);
         model = Parse(bytes);
-        Validate(model);
+        Validate(model, false);  // 打开时接受旧文件的多位小数时长，由界面规整；保存时严格
         baseline = Hash(bytes);
     }
 
@@ -62,7 +62,10 @@ internal sealed class DocumentSession
         foreach (string name in obj.Keys) if (!allowed.Contains(name)) throw new InvalidDataException("规格包含未知字段：" + name);
     }
 
-    internal static void Validate(Dictionary<string, object> obj)
+    internal static void Validate(Dictionary<string, object> obj) { Validate(obj, true); }
+
+    // strictDuration：时长只允许精确到 0.1 秒（保存与新文件）；打开旧文件时放宽为任意正小数
+    internal static void Validate(Dictionary<string, object> obj, bool strictDuration)
     {
         ExactFields(obj, RootFields);
         if (StringField(obj, "schema") != "kpl-user-spec-v2" || StringField(obj, "document_id").Trim().Length == 0)
@@ -108,9 +111,9 @@ internal sealed class DocumentSession
             if (number.Length == 0 || !numbers.Add(number)) throw new InvalidDataException("镜号缺失或重复。");
             string duration = StringField(shot, "duration_seconds").Trim();
             decimal seconds;
-            if (duration.Length > 0 && (!Regex.IsMatch(duration, @"^(?:\d+(?:\.\d+)?|\.\d+)$") ||
+            if (duration.Length > 0 && (!Regex.IsMatch(duration, strictDuration ? @"^(?:\d+(?:\.\d)?|\.\d)$" : @"^(?:\d+(?:\.\d+)?|\.\d+)$") ||
                 !Decimal.TryParse(duration, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out seconds) || seconds <= 0))
-                throw new InvalidDataException("镜头时长应是大于零的秒数。");
+                throw new InvalidDataException("镜头时长应是大于零的秒数，最多精确到 0.1 秒。");
             string thumb = StringField(shot, "thumbnail");
             if (thumb.Length > 0 && !SafeThumbnail(thumb)) throw new InvalidDataException("缩略图引用无效。");
             if (!Marks.Contains(StringField(shot, "mark"))) throw new InvalidDataException("镜头标记无效。");

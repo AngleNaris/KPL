@@ -13,6 +13,7 @@
   const TICK_GAP = 80;
   const MAX_PPS = 400;      // 最大缩放：每秒 400 像素，0.1 秒占 40 像素
   const UNKNOWN = '待确认';
+  const DESCRIPTION_LIMIT = 300;  // 详细描述的显示字数上限，与 scripts/html_spec.py 一致
   const ASSET_DIR = '../05_参考资产/';
   const REF_PATTERN = /@\{([^{}]+)\}|<Picture \d+>/g; // 与 ShadowStage 的 @{…} 语法一致
   const DEFAULT_PREFS = {mode: 'dark', accent: 'amber'};
@@ -96,6 +97,25 @@
     const value = Number(raw);
     return value > 0 ? value : null;
   }
+  // 写入规格的时长只精确到 0.1 秒
+  const DURATION_PATTERN = /^(?:\d+(?:\.\d)?|\.\d)$/;
+  const tenth = value => { const n = Math.round(value * 10) / 10; return Number.isInteger(n) ? String(n) : n.toFixed(1); };
+
+  /* 旧文件可能有 1.4166666666666667 这类时长：按累计切点取 0.1 秒整再相减（最短 0.1 秒），总长不漂移。
+     返回改动的镜头数；空或无效的时长不动，交给“时长待确认”。 */
+  function normalizeDurations(model) {
+    let exact = 0, prev = 0, count = 0;
+    for (const shot of model.shots) {
+      const length = seconds(shot);
+      if (length === null) continue;
+      exact += length;
+      const end = Math.max(Math.round(exact * 10) / 10, Math.round((prev + 0.1) * 10) / 10);
+      const next = tenth(end - prev);
+      prev = end;
+      if (shot.duration_seconds.trim() !== next) { shot.duration_seconds = next; count++; }
+    }
+    return count;
+  }
   const round = value => String(Math.round(value * 1000) / 1000);
   const durationText = shot => seconds(shot) === null ? UNKNOWN : shot.duration_seconds.trim() + ' 秒';
 
@@ -163,6 +183,15 @@
     if (typeof path !== 'string' || !path.startsWith(ASSET_DIR)) return null;
     const rel = path.slice(ASSET_DIR.length).split('/').map(encodeURIComponent).join('/');
     return (host ? 'https://kpl-assets.local/' : 'preview-assets/') + rel;
+  }
+
+  /* 缩略图：原图单张可达数十 MB，界面一律只载入宿主生成的缩略图；没就绪的图不载入、只显示占位。
+     预览环境没有宿主缓存，沿用原图路径。 */
+  const thumbs = {map: new Map(), building: false};
+  function thumbUrl(path) {
+    if (!host) return imageUrl(path);
+    const name = thumbs.map.get(path);
+    return name ? 'https://kpl-thumbs.local/' + name : null;
   }
 
   /* ---------- 复制素材图片（只放位图） ---------- */
@@ -303,15 +332,26 @@
 
   /* 只读与编辑共用同一个元素，解锁只加 contenteditable，布局不变。分段标记不显示，编辑时留在所在分段上。
      输入法组字期间不重绘，组字结束再处理。 */
-  function textBlock(id, title, shot, key, onChange) {
+  function textBlock(id, title, shot, key, onChange, limit) {
     const editing = state.editing;
     const box = el('div', {id, class: 'rich', role: 'textbox', 'aria-multiline': 'true', 'aria-labelledby': id + '-title',
       'aria-readonly': editing ? null : 'true', contenteditable: editing ? 'plaintext-only' : null, spellcheck: 'false'},
       richNodes(shot[key], !editing));
+    // 有上限的字段在标题旁显示显示字数（不计分段标记）；超出只标警告色，不拦保存，上限由 agent 端检查执行
+    const count = limit ? el('span', {class: 'count'}) : null;
+    const recount = () => {
+      if (!count) return;
+      const length = [...shot[key].replace(SEGMENT_PATTERN, '$2')].length;
+      count.textContent = length + '/' + limit;
+      count.classList.toggle('is-over', length > limit);
+      count.title = length > limit ? '超出 ' + limit + ' 字：这里只概括画面内容' : '';
+    };
+    recount();
     const update = event => {
       if (event.isComposing) return;
       if (stale(box)) retokenize(box);
       shot[key] = childText(box);
+      recount();
       onChange();
     };
     box.addEventListener('input', update);
@@ -335,13 +375,14 @@
             const result = retag(box, span, tag);
             box.replaceChildren(...richNodes(result.text, false));
             shot[key] = result.text;
+            recount();
             box.focus(); selectSpan(box, result.span);
             onChange();
           }
         }))
       });
     });
-    return el('section', {class: 'block'}, [el('h3', {class: 'block-title', id: id + '-title', text: title}), box]);
+    return el('section', {class: 'block'}, [el('h3', {class: 'block-title', id: id + '-title'}, [el('span', {text: title}), count]), box]);
   }
 
   /* ---------- 渲染：外框 ---------- */
@@ -364,8 +405,9 @@
 
   /* ---------- 渲染：表格 ---------- */
   function thumb(shot) {
-    const url = imageUrl(shot.thumbnail);
-    const empty = () => el('span', {class: 'thumb thumb-empty', role: 'img', 'aria-label': shot.number + ' 暂无画面'}, icon('image'));
+    const url = thumbUrl(shot.thumbnail);
+    // 路径有效但缓存未就绪时留下 data-thumb-shot，缩略图生成后由 applyThumbs 原地替换
+    const empty = () => el('span', {class: 'thumb thumb-empty', role: 'img', 'aria-label': shot.number + ' 暂无画面', 'data-thumb-shot': imageUrl(shot.thumbnail) ? shot.id : null}, icon('image'));
     if (!url) return empty();
     const img = el('img', {class: 'thumb', src: url, alt: shot.number + ' 参考画面', loading: 'lazy', 'data-peek-shot': shot.id});
     img.addEventListener('error', () => img.replaceWith(empty()));
@@ -395,12 +437,12 @@
     const input = el(multiline ? 'textarea' : 'input', {class: 'cell-input ' + cls, 'aria-label': shot.number + ' ' + label,
       type: multiline ? null : 'text', rows: multiline ? '1' : null, placeholder: UNKNOWN, autocomplete: 'off', spellcheck: 'false',
       readonly: !state.editing, tabindex: state.editing || tabbable ? '0' : '-1',
-      'aria-invalid': key === 'duration_seconds' && filled(shot[key]) && seconds(shot) === null ? 'true' : null});
+      'aria-invalid': key === 'duration_seconds' && filled(shot[key]) && !DURATION_PATTERN.test(shot[key].trim()) ? 'true' : null});
     input.value = shot[key] || '';
     input.addEventListener('input', () => {
       shot[key] = input.value;
       if (key === 'duration_seconds') {
-        input.setAttribute('aria-invalid', String(filled(input.value) && seconds(shot) === null));
+        input.setAttribute('aria-invalid', String(filled(input.value) && (seconds(shot) === null || !DURATION_PATTERN.test(input.value.trim()))));
         input.nextElementSibling.hidden = !filled(input.value);
       }
       if (key === 'number' && shot.id === state.selectedId) $('detail-title').textContent = input.value;
@@ -446,7 +488,7 @@
 
   /* 片段：参考画面沿片段横向平铺成胶片条，顶部标签写镜号、时长与标记。 */
   function clip(shot, onTrack) {
-    const selected = shot.id === state.selectedId, url = imageUrl(shot.thumbnail);
+    const selected = shot.id === state.selectedId, url = thumbUrl(shot.thumbnail);
     const strip = url ? el('span', {class: 'clip-strip'}) : null;
     if (strip) strip.style.backgroundImage = 'url("' + url + '")';
     return el('button', {type: 'button', class: 'clip', 'data-id': shot.id, 'aria-pressed': String(selected),
@@ -550,7 +592,11 @@
   /* 按住拖动：指针捕获到 node 上，松开或取消时结束。 */
   function followPointer(node, event, onMove, onEnd) {
     node.setPointerCapture(event.pointerId);
+    // 拖动期间整页禁止选中文字，并清掉已有选区；类在 pointerdown 内同步加上，早于浏览器开始选区
+    document.documentElement.classList.add('is-scrubbing');
+    getSelection().removeAllRanges();
     const stop = () => {
+      document.documentElement.classList.remove('is-scrubbing');
       node.removeEventListener('pointermove', onMove);
       node.removeEventListener('pointerup', stop);
       node.removeEventListener('pointercancel', stop);
@@ -755,7 +801,7 @@
   }
 
   function imageFor(shot) {
-    const url = imageUrl(shot.thumbnail);
+    const url = thumbUrl(shot.thumbnail);   // 缩略图未就绪就不载入，监视器显示占位
     if (!url) return null;
     let img = preview.images.get(url);
     if (!img) {
@@ -804,7 +850,8 @@
     const {placed, total} = plan();
     const time = Math.min(preview.time, total);
     const item = placed.find(entry => time < entry.start + entry.length) || placed[placed.length - 1] || null;
-    $('timecode').textContent = clock(time) + ' / ' + clock(total);
+    $('timecode').textContent = clock(time);
+    $('timecode-total').textContent = clock(total);
     placePlayhead();
     if (preview.playing) followPlayhead();
     $('monitor-shot').textContent = item ? item.shot.number : '';
@@ -986,10 +1033,10 @@
     if (!assets.length && !issues.length) return el('p', {class: 'field-empty', text: '描述和提示词里还没有引用资产。'});
     return el('ul', {class: 'asset-list'}, [
       ...assets.map(asset => {
-        const url = imageUrl(asset.path);
+        const url = thumbUrl(asset.path);
         return el('li', {}, el('button', {type: 'button', class: 'asset-card', 'data-asset': asset.id,
           'aria-label': asset.id + ' ' + asset.name + '，复制图片'}, [
-          url ? el('img', {class: 'asset-thumb', src: url, alt: ''}) : el('span', {class: 'asset-thumb thumb-empty'}, icon('image')),
+          url ? el('img', {class: 'asset-thumb', src: url, alt: ''}) : el('span', {class: 'asset-thumb thumb-empty', 'data-thumb-asset': imageUrl(asset.path) ? asset.id : null}, icon('image')),
           el('span', {class: 'mono', text: asset.id}),
           el('span', {class: 'asset-name', text: asset.name})
         ]));
@@ -1021,7 +1068,7 @@
         el('p', {class: 'label', text: '镜头详情'}),
         el('h2', {class: 'detail-id', id: 'detail-title', text: shot.number})
       ]),
-      textBlock('f-description', '详细描述', shot, 'description', refresh),
+      textBlock('f-description', '详细描述', shot, 'description', refresh, DESCRIPTION_LIMIT),
       assetsBlock(shot),
       textBlock('f-prompt', '图片生成提示词', shot, 'prompt', refresh),
       textBlock('f-video-prompt', '视频提示词', shot, 'video_prompt', refresh)
@@ -1200,7 +1247,7 @@
       if (!shot && !asset || anchor === node) return;
       anchor = node;
       img.hidden = false;
-      img.src = imageUrl(shot ? shot.thumbnail : asset.path) || '';
+      img.src = thumbUrl(shot ? shot.thumbnail : asset.path) || '';
       $('peek-id').textContent = shot ? shot.number : asset.id;
       $('peek-label').textContent = shot ? shot.content : asset.name;
       peek.classList.toggle('peek-large', Boolean(shot));
@@ -1266,13 +1313,23 @@
   }
 
   function setEditing(on) {
+    let pendingNormalize = false;
     if (!on) {
-      state.working = clone(state.doc); state.dirty = false;
+      // 回到只读：显示上次保存的版本，时长照样按 0.1 秒规整显示，但不算未保存
+      state.working = clone(state.doc);
+      if (canEdit()) normalizeDurations(state.working);
+      state.dirty = false;
       if (!shotById(state.selectedId)) state.selectedId = shots().length ? shots()[0].id : null;
+    } else {
+      // 解锁：只读时规整过的时长与文件不同，算作待保存的修改
+      pendingNormalize = JSON.stringify(state.working) !== JSON.stringify(state.doc);
+      state.dirty = pendingNormalize;
     }
     state.editing = on;
     editEffect(on);
-    status(on ? '已解锁编辑：可直接在表格中修改。按 Ctrl+S 或点击保存。' : '已退出编辑，内容保持为上次保存的版本。');
+    status(!on ? '已退出编辑，内容保持为上次保存的版本。'
+      : pendingNormalize ? '已解锁编辑：按 0.1 秒规整的时长尚未写入文件，按 Ctrl+S 保存后生效。'
+      : '已解锁编辑：可直接在表格中修改。按 Ctrl+S 或点击保存。');
     render();
   }
 
@@ -1301,7 +1358,8 @@
       if (!number) return '每个镜头都需要镜号。';
       if (numbers.has(number)) return '镜号 ' + shot.number.trim() + ' 重复；修改仍未保存。';
       numbers.add(number);
-      if (filled(shot.duration_seconds) && seconds(shot) === null) return shot.number + ' 的时长应是大于零的秒数；未决定时留空。';
+      if (filled(shot.duration_seconds) && (seconds(shot) === null || !DURATION_PATTERN.test(shot.duration_seconds.trim())))
+        return shot.number + ' 的时长应是大于零的秒数，最多精确到 0.1 秒；未决定时留空。';
     }
     if (!validAspect(state.working.layout_aspect || '')) return '预览画幅应写成“宽:高”，例如 16:9；未决定时留空。';
     return null;
@@ -1397,6 +1455,77 @@
     });
   }
 
+  /* ---------- 关于与更新提示 ---------- */
+  function showVersion(version) { $('about-version').textContent = 'v' + version; }
+
+  function showUpdate(version) {
+    const badge = $('update-badge');
+    badge.hidden = false;
+    badge.querySelector('span').textContent = '新版本 v' + version;
+    status('发现新版本 v' + version + '，点击右上角的提示前往发布页。');
+  }
+
+  function setupAbout() {
+    const trigger = $('about-trigger'), panel = $('about-panel');
+    const open = value => {
+      panel.hidden = !value;
+      trigger.setAttribute('aria-expanded', String(value));
+      if (value) panel.focus();
+    };
+    trigger.addEventListener('click', () => open(panel.hidden));
+    panel.addEventListener('keydown', event => {
+      if (event.key === 'Escape') { open(false); trigger.focus(); }
+    });
+    document.addEventListener('pointerdown', event => {
+      if (!panel.hidden && !panel.contains(event.target) && !trigger.contains(event.target)) open(false);
+    });
+    // 网址由宿主决定：页面只请求“打开发布页”
+    $('update-badge').addEventListener('click', () => { if (host) host.postMessage({type: 'openUpdate'}); });
+  }
+
+  /* ---------- 缩略图：宿主在后台生成并汇报进度，就绪的才载入 ---------- */
+  /* 只原地替换占位与缺失的胶片条，不重绘整个界面（避免丢失焦点与编辑状态）。 */
+  function applyThumbs(paths) {
+    if (!paths.size) return;
+    for (const node of document.querySelectorAll('[data-thumb-shot]')) {
+      const shot = shotById(node.dataset.thumbShot);
+      if (shot && paths.has(shot.thumbnail)) node.replaceWith(thumb(shot));
+    }
+    for (const node of document.querySelectorAll('[data-thumb-asset]')) {
+      const asset = state.working.assets.find(item => item.id === node.dataset.thumbAsset);
+      const url = asset && paths.has(asset.path) ? thumbUrl(asset.path) : null;
+      if (url) node.replaceWith(el('img', {class: 'asset-thumb', src: url, alt: ''}));
+    }
+    for (const node of document.querySelectorAll('.clip[data-id]')) {
+      const shot = shotById(node.dataset.id);
+      const url = shot && paths.has(shot.thumbnail) ? thumbUrl(shot.thumbnail) : null;
+      if (!url || node.querySelector('.clip-strip')) continue;
+      const strip = el('span', {class: 'clip-strip'});
+      strip.style.backgroundImage = 'url("' + url + '")';
+      node.prepend(strip);
+    }
+    const current = preview.current ? shotById(preview.current) : null;
+    if (current && paths.has(current.thumbnail)) drawPreview();
+  }
+
+  function onThumbs(data) {
+    const ready = data.ready || {};
+    for (const [path, name] of Object.entries(ready)) thumbs.map.set(path, name);
+    applyThumbs(new Set(Object.keys(ready)));
+    const note = $('thumb-progress');
+    if (!data.finished) {
+      thumbs.building = true;
+      note.hidden = false;
+      note.textContent = '正在生成缩略图 ' + data.done + '/' + data.total;
+      return;
+    }
+    note.hidden = true;
+    if (!thumbs.building) return;   // 缓存本来就齐全时不打扰
+    thumbs.building = false;
+    const failed = data.total - thumbs.map.size;
+    status(failed > 0 ? '缩略图已生成，' + failed + ' 张无法生成，保持占位。' : '缩略图已全部生成。');
+  }
+
   /* ---------- 事件 ---------- */
   function setupEvents() {
     $('tab-table').addEventListener('click', () => setView('table'));
@@ -1435,10 +1564,14 @@
       const data = event.data || {};
       if (data.type === 'saveResult' && pendingSave) finishSave(data.status);
       else if (data.type === 'copyResult') status(data.status === 'copied' ? '已复制图片。' : '复制失败：图片无法读取或剪贴板被占用。');
+      else if (data.type === 'info') showVersion(data.version);
+      else if (data.type === 'update') showUpdate(data.version);
+      else if (data.type === 'thumbs') onThumbs(data);
     });
   }
 
   setupDisplay();
+  setupAbout();
   setupMenu();
   setupPlainCopy();
   setupPeek();
@@ -1449,7 +1582,11 @@
   setupAspect();
   setupHelp();
   setupEvents();
+  // 旧文件的时长按 0.1 秒规整后显示。只读时不算未保存（关窗口不需要保存，也不会被保存卡住）；解锁后差异才算未保存，保存时写回
+  const normalized = canEdit() ? normalizeDurations(state.working) : 0;
   render();
-  status(canEdit() ? '只读查看中。需要修改时点击“解锁编辑”。' : '这是已确认或定稿的版本，只能查看。');
+  status(!canEdit() ? '这是已确认或定稿的版本，只能查看。'
+    : normalized ? '有 ' + normalized + ' 个镜头的时长已按 0.1 秒规整显示（按累计切点取整，总长不变）；文件尚未改动，解锁编辑并保存后才写回。'
+    : '只读查看中。需要修改时点击“解锁编辑”。');
   if (host) host.postMessage({type: 'ready'});
 })();

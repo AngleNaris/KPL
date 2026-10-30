@@ -26,7 +26,7 @@ test('malicious script terminator is serialized as data and Chinese/newlines rou
 test('stable IDs, seconds and allowed local thumbnails are validated', () => {
   const data = sample(); data.shots = [row()];
   assert.equal(core.validate(data), null);
-  for (const bad of ['-1','NaN','0','1e3']) {
+  for (const bad of ['-1','NaN','0','1e3','1.25','1.4166666666666667']) {
     const changed = structuredClone(data); changed.shots[0].duration_seconds = bad;
     assert.match(core.validate(changed), /时长/);
   }

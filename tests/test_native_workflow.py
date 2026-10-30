@@ -216,4 +216,43 @@ class ReadinessTests(unittest.TestCase):
                 if status == 'needs_setup': self.assertEqual(result['status'], 'authorization_required')
 
 
+CSC = Path(r'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe')
+
+
+@unittest.skipUnless(os.name == 'nt' and CSC.is_file(), 'needs existing Windows C# compiler')
+class NativeCSharpTests(unittest.TestCase):
+    """编译并运行 native-prototype/tests 中的 C# 测试；只写临时目录。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='kpl-cs-')
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = Path(self.tmp.name)
+
+    def compile_and_run(self, name, sources, references, main=None, arg=None):
+        exe = self.dir / (name + '.exe')
+        command = [str(CSC), '/nologo', '/out:' + str(exe)] + ['/reference:' + ref for ref in references]
+        if main: command.append('/main:' + main)
+        compiled = subprocess.run(command + [str(ROOT / s) for s in sources], capture_output=True)
+        self.assertEqual(compiled.returncode, 0, compiled.stdout.decode('gbk', 'replace'))
+        return subprocess.run([str(exe), str(arg)], capture_output=True, timeout=60, cwd=self.dir)
+
+    def test_document_session_save_conflict_and_duration_precision(self):
+        doc = self.dir / 'doc'
+        doc.mkdir()
+        shutil.copy2(ROOT / 'native-prototype/examples/01_合成规格_v001_draft.kpldoc', doc)
+        result = self.compile_and_run('SessionTests', ['native-prototype/src/DocumentSession.cs', 'native-prototype/tests/SessionTests.cs'],
+                                      ['System.Web.Extensions.dll'], arg=doc)
+        self.assertEqual(result.returncode, 0, result.stderr.decode('utf-8', 'replace'))
+        self.assertIn(b'PASS', result.stdout)
+
+    def test_host_thumbnails_and_prefs_merge(self):
+        core = ROOT / 'native-prototype/bin/win-x64/Microsoft.Web.WebView2.Core.dll'
+        shutil.copy2(core, self.dir)
+        result = self.compile_and_run('HostTests', ['native-prototype/src/Host.cs', 'native-prototype/src/DocumentSession.cs', 'native-prototype/tests/HostTests.cs'],
+                                      [str(core), 'System.Windows.Forms.dll', 'System.Drawing.dll', 'System.Web.Extensions.dll'],
+                                      main='HostTests', arg=self.dir / 'work')
+        self.assertEqual(result.returncode, 0, result.stderr.decode('utf-8', 'replace'))
+        self.assertIn(b'PASS', result.stdout)
+
+
 if __name__ == '__main__': unittest.main()

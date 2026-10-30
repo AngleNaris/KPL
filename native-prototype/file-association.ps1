@@ -1,7 +1,9 @@
 ﻿param(
-    [ValidateSet('Inspect', 'Install', 'Uninstall')]
+    [ValidateSet('Inspect', 'Install', 'Rebind', 'Uninstall')]
     [string]$Action = 'Inspect',
-    [string]$Executable = (Join-Path $PSScriptRoot 'dist\KPL规格编辑器.exe')
+    [string]$Executable = (Join-Path $PSScriptRoot 'bin\win-x64\KPL规格编辑器.exe'),
+    [string]$ExpectedExecutable = '',
+    [switch]$ConfirmRebind
 )
 
 $ErrorActionPreference = 'Stop'
@@ -36,7 +38,7 @@ function Is-ExactKey([string]$path, [string[]]$valueNames, [string[]]$subNames) 
                (($actualSubs | Sort-Object) -join '|' -ceq (($subNames | Sort-Object) -join '|'))
     } finally { $key.Dispose() }
 }
-function Is-PristineAssociation {
+function Is-PristineAssociation([string]$expectedCommand = $command) {
     return (Is-ExactKey $ext @('') @()) -and
         (Is-ExactKey $prog @('', 'KplPrototypeOwner') @('shell')) -and
         (Is-ExactKey ($prog + '\shell') @() @('open')) -and
@@ -45,7 +47,7 @@ function Is-PristineAssociation {
         ((Read-Value $cu $ext '') -ceq $progId) -and
         ((Read-Value $cu $prog '') -ceq 'KPL 规格文档（原型）') -and
         ((Read-Value $cu $prog 'KplPrototypeOwner') -ceq $owner) -and
-        ((Read-Value $cu ($prog + '\shell\open\command') '') -ceq $command)
+        ((Read-Value $cu ($prog + '\shell\open\command') '') -ceq $expectedCommand)
 }
 function Notify-Shell {
     if (-not ('KplAssociationNotify' -as [type])) {
@@ -87,6 +89,29 @@ if ($Action -eq 'Install') {
         if (Is-PristineAssociation) { $cu.DeleteSubKey($ext, $false); $cu.DeleteSubKeyTree($prog, $false) }
         throw ('关联未确认完成；请运行 -Action Inspect 检查是否留下部分记录。' + $_.Exception.Message)
     }
+    return
+}
+if ($Action -eq 'Rebind') {
+    if (-not $ConfirmRebind -or -not $ExpectedExecutable) { throw '必须明确指定原路径并确认重绑定；未修改。' }
+    if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw '找不到新编辑器；未修改关联。' }
+    if (Exists $cu ($fileExt + '\UserChoice')) { throw 'Windows 已记录受保护的用户选择；未修改关联。' }
+    $previousExe = [System.IO.Path]::GetFullPath($ExpectedExecutable)
+    $previousCommand = '"' + $previousExe + '" "%1"'
+    if (-not (Is-PristineAssociation $previousCommand)) { throw '关联不再与预期的 KPL 自有记录一致；未修改。' }
+    if ($previousCommand -ceq $command) { Write-Output 'KPL 关联已指向该程序；未重复修改。'; return }
+    $key = $cu.OpenSubKey(($prog + '\shell\open\command'), $true)
+    if ($null -eq $key) { throw '关联命令不可写；未修改。' }
+    try {
+        if ((Exists $cu ($fileExt + '\UserChoice')) -or
+            -not (Is-PristineAssociation $previousCommand) -or
+            ($key.GetValue('', $null) -cne $previousCommand)) {
+            throw '关联在修改前发生变化；未修改。'
+        }
+        $key.SetValue('', $command)
+    } finally { $key.Dispose() }
+    if (-not (Is-PristineAssociation)) { throw '写入后状态不确定；请先检查实际关联，不要盲目重试。' }
+    Notify-Shell
+    Write-Output '已更新当前用户的 KPL 自有 .kpldoc 打开路径；没有修改 .html。'
     return
 }
 if (-not (Is-PristineAssociation)) { throw '关联已变化或不属于此原型；未删除。' }
