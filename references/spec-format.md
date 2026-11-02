@@ -1,10 +1,10 @@
 # 用户规格格式（编辑器约定）
 
-新版离线 HTML 与原生 `.kpldoc` 共用 `kpl-user-spec-v2` 数据契约，但分别由浏览器和原生编辑器显示。每个项目只选其中一个作为权威；HTML 导出是不会同步的查看副本。KPL 工具对旧 v1 保留原样只读，旧 HTML 自带的页面可能仍允许用户编辑；v2 原生编辑器不能直接打开 v1，不自动转换。Agent 写入或修改用户规格时必须按本格式书写；写入流程、授权与哈希核对见 [项目目录与版本](project-structure.md)。字段不全时留空（显示为“待确认”），不猜测、不补默认值。
+新版离线 HTML 与原生 `.kpldoc` 共用 `kpl-user-spec-v2` 数据契约，但分别由浏览器和原生编辑器显示；原生文档加入媒体后升级为 `kpl-user-spec-v3`，只多一个 `timeline`（见[媒体时间线](spec-format.md#媒体时间线v3)）。每个项目只选其中一个作为权威；HTML 导出是不会同步的查看副本。KPL 工具对旧 v1 保留原样只读，旧 HTML 自带的页面可能仍允许用户编辑；v2 原生编辑器不能直接打开 v1，不自动转换。Agent 写入或修改用户规格时必须按本格式书写；写入流程、授权与哈希核对见 [项目目录与版本](project-structure.md)。字段不全时留空（显示为“待确认”），不猜测、不补默认值。
 
 ## 字段
 
-顶层只有 `schema`、`document_id`、`version`、`status`、`confirmation`、`revision`、`title`、`summary`、`global_settings`、`layout_aspect`、`assets`、`shots`，多一个或少一个字段都会被拒绝。`layout_aspect` 是节奏预览的画幅，写成 `宽:高`（如 `16:9`、`9:16`、`2.39:1`），未经确认时留空。当前编辑器空值会暂按 16:9 显示预览；这不是用户确认，不用于交付规格或布局验收。
+顶层只有 `schema`、`document_id`、`version`、`status`、`confirmation`、`revision`、`title`、`summary`、`global_settings`、`layout_aspect`、`assets`、`shots`（v3 另加 `timeline`），多一个或少一个字段都会被拒绝。`layout_aspect` 是节奏预览的画幅，写成 `宽:高`（如 `16:9`、`9:16`、`2.39:1`），未经确认时留空。当前编辑器空值会暂按 16:9 显示预览；这不是用户确认，不用于交付规格或布局验收。
 
 每个资产只有三个字段：
 
@@ -89,3 +89,34 @@
 - 裁切后按比例放入画幅，不足处留黑边，不生成画外内容；只有硬切，不模拟人物动作、景深或三维运镜。
 - 运镜应与 `camera_motion` 一致：例如“缓慢推近”用逐渐缩小的裁切框，“横移”用平移的裁切框。`camera_motion` 未确认或为 `固定` 时写 `null` 或 `static`，不静默套默认运镜。
 - 通过 `html_spec.py apply` 写入：`{"target":"shot","id":"实际稳定ID","field":"layout_camera","old":null,"new":{...}}`；`old` 必须等于当前值。
+
+## 媒体时间线（v3）
+
+用户在原生编辑器里为镜头关联视频后，保存时文档从 v2 原地升级为 `kpl-user-spec-v3`（`schema` 改变，其余字段不变）；旧版编辑器打不开 v3。HTML 规格仍是 v2。时间一律是**整数微秒**，片段采用素材的 `[in_us, out_us)`。
+
+```json
+{"timeline": {
+  "video": [
+    {"id": "V1", "name": "", "muted": false, "hidden": false, "locked": false, "gain": 1, "clips": [
+      {"id": "c1", "shot_id": "S02", "source": "../07_预演交付/01_S02_视频_v001_draft.mp4", "in_us": 500000, "out_us": 3500000, "audio": true,
+       "takes": [{"id": "t1", "source": "../07_预演交付/01_S02_视频_v002_draft.mp4", "in_us": 0, "out_us": 3000000, "audio": true}]}
+    ]}
+  ],
+  "audio": [],
+  "subtitles": [],
+  "markers": [],
+  "markers_locked": false
+}}
+```
+
+- `video[0]` 是主轨：片段只有 `shot_id`、没有 `start_us`，位置由镜头格决定；每个镜头最多关联一个视频。镜头格宽度始终是 `duration_seconds`，视频采用长度短于镜头时显示空缺，长于镜头时多出的部分不用；裁剪视频不会改镜头时长，只有用户点“用视频长度设为镜头时长”才会改。镜头重排时视频跟着镜头走。
+- **视频版本**：同一镜头生成了多次时，顶层的 `source`、`in_us`、`out_us`、`audio` 是**当前使用的版本**，其他版本放在 `takes` 里（每个 `{id, source, in_us, out_us, audio}`，没有候选时为 `[]`）。用户在编辑器里点选版本，就是把该版本与顶层字段（连同 `id`）互换，所以每个版本的 `id` 始终跟着同一个文件。**Agent 新生成的版本只追加到 `takes`，不改顶层的当前版本**；镜头还没有关联视频时，才把第一个版本写成顶层。是否换用新版本由用户决定，除非用户明确要求，Agent 不切换、不删除已有版本。版本 `id` 与时间线里其他 ID 一样全局唯一。
+- 轨道 `id`、片段 `id` 与标记 `id` 在整条时间线内唯一（字母或数字开头，只含字母、数字、`_`、`-`）；界面只显示轨道编号（`S1`、`V2`、`A1`），`name` 一律留空，Agent 也不要写；`gain` 为 0–1。视频轨有 `muted`（关声音）与 `hidden`（关画面）两个开关，音频轨只有 `muted`，字幕轨只有 `hidden`；它们只影响预览与导出，不删除片段。每条轨道都有 `locked`，时间线另有 `markers_locked` 管整条标记带：锁定是用户对这一行的保护，**Agent 不新增、修改、移动或删除锁定行里的任何条目**，需要动时先请用户解锁；读取不受影响。
+- `source` 相对 `.kpldoc` 所在目录，用 `/` 分隔；素材与文档不在同一个盘时为以盘符开头、同样用 `/` 分隔的绝对路径。编辑器只播放 mp4、m4v、mov、webm 视频与 wav、mp3、m4a、aac、flac、ogg、opus 音频，素材缺失或无法解码时显示警告色，不冒充画面。
+- 自由视频轨（`video[1:]`，序号越大越靠上并覆盖下层）与通用音轨 `audio`：片段带 `start_us`，同一轨道内不能重叠，自由轨片段不绑定镜头。预览时画面取最上面一条没关画面、此刻有片段的视频轨，声音各轨按开关与音量同时播放。
+- `markers` 是时间线上的注释，用来表达段落、节奏、叙事意图和整体安排：`{id, start_us, end_us, text, author}`。`end_us` 为 `null` 是点标记，否则是 `[start_us, end_us)` 的范围标记（`end_us` 必须大于 `start_us`）；`author` 只能是 `user` 或 `agent`，界面用不同颜色区分。标记可以互相重叠，不绑定镜头，不进入分镜表格。
+- **Agent 写标记**：只新增或修改 `author` 为 `agent` 的标记，`author` 为 `user` 的标记只读，不改写、不删除、不挪位置；需要调整用户标记时先问用户。新增标记的 `id` 不得与时间线里已有的任何 ID 重复。读回时以文档里的实际标记为准，用户可能已移动、改写或删除 Agent 写的标记。示例：`{"id": "m_chorus1", "start_us": 42000000, "end_us": 58000000, "text": "副歌一：情绪推到最高，镜头切换加快", "author": "agent"}`。
+- `subtitles` 是字幕轨列表，界面上始终排在所有视频轨之上（`subtitles[0]` 最上）。每条轨只有 `id`、`name`、`language`、`hidden`、`locked`、`cues`（`hidden` 为 `true` 时不在画面上显示）；每个条目是 `{id, start_us, end_us, text, words}`，`text` 不超过 2000 字，`words` 为 0 个或多个 `{start_us, end_us, text}`，按顺序、落在本句范围内、互不重叠。逐字时间来自 ASS 的卡拉 OK 标签（`{\kN}`、`{\kfN}`、`{\koN}`，单位 10 毫秒）或 LRC 的 `<mm:ss.xx>` 标记；没有逐字标记时 `words` 留空。同一个字幕轨的条目不能重叠。
+- 编辑器只读现成的 srt、lrc、ass 文件，不生成文字、不做语音识别、不自动对齐音乐：歌词或字幕由外部工具或 Agent 准备好后再导入。Agent 读 `subtitles` 得知每句、每个字落在什么时间，据此安排画面与节奏；这些时间不构成字幕正确性的验收证据。
+- **示例**：逐句加逐字的歌词轨写作 `{"id": "S1", "name": "", "language": "zh", "hidden": false, "locked": false, "cues": [{"id": "q1", "start_us": 42020000, "end_us": 44480000, "text": "长风卷起了漫天狂沙", "words": [{"start_us": 42020000, "end_us": 42520000, "text": "长风"}, {"start_us": 42520000, "end_us": 44480000, "text": "卷起了漫天狂沙"}]}]}`。
+- Agent 读取时间线了解哪些镜头已有视频、采用范围和与计划时长的差额；当前 `html_spec.py apply` 不改时间线，按稳定 ID 移除镜头时会一并解除它在主轨上的视频关联。素材关联和采用范围不是视频验收证据，仍须实际观看。

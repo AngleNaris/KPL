@@ -15,6 +15,10 @@ internal static class SessionTests
     {
         var result = Clone(session.InitialJson); result["title"] = value; result["revision"] = (int)result["revision"] + 1; return result;
     }
+    private static Dictionary<string, object> Renamed(Dictionary<string, object> clip)
+    {
+        var copy = new Dictionary<string, object>(clip); copy["id"] = "c9"; return copy;
+    }
     private static void Main(string[] args)
     {
         if (args.Length == 3 && args[0] == "--hold")
@@ -120,6 +124,52 @@ internal static class SessionTests
             ((Dictionary<string, object>)((object[])fixedModel["shots"])[0])["duration_seconds"] = "1.4";
             Check(legacySession.Save(fixedModel, null) == "saved", "normalized duration not saved");
             Check((string)((Dictionary<string, object>)((object[])Clone(new DocumentSession(legacy).InitialJson)["shots"])[0])["duration_seconds"] == "1.4", "normalized duration lost");
+            // 加入媒体后保存：v2 原地升级为 v3，时间线原样读回；不能再降回 v2
+            var upgradeSession = new DocumentSession(file);
+            var upgraded = Next(upgradeSession, "加入媒体");
+            upgraded["schema"] = DocumentSession.SchemaV3;
+            upgraded["timeline"] = Clone("{\"video\":[{\"id\":\"V1\",\"name\":\"\",\"muted\":false,\"hidden\":false,\"locked\":false,\"gain\":1,\"clips\":[" +
+                "{\"id\":\"c1\",\"shot_id\":\"s1\",\"source\":\"../07_预演交付/S01.mp4\",\"in_us\":0,\"out_us\":2500000,\"audio\":true,\"takes\":[{\"id\":\"t1\",\"source\":\"../07_预演交付/S01_v002.mp4\",\"in_us\":0,\"out_us\":2000000,\"audio\":false}]}]}," +
+                "{\"id\":\"V2\",\"name\":\"空镜\",\"muted\":true,\"hidden\":true,\"locked\":true,\"gain\":0.5,\"clips\":[{\"id\":\"c2\",\"start_us\":3000000000,\"source\":\"D:/素材/a.mov\",\"in_us\":0,\"out_us\":100000,\"audio\":false}]}]," +
+                "\"audio\":[{\"id\":\"A1\",\"name\":\"\",\"muted\":false,\"locked\":false,\"gain\":0.8,\"clips\":[{\"id\":\"c3\",\"start_us\":0,\"source\":\"音乐.wav\",\"in_us\":0,\"out_us\":60000000}]}]," +
+                "\"subtitles\":[{\"id\":\"S1\",\"name\":\"歌词\",\"language\":\"zh\",\"hidden\":false,\"locked\":false,\"cues\":[" +
+                "{\"id\":\"q1\",\"start_us\":0,\"end_us\":2000000,\"text\":\"长风起\",\"words\":[" +
+                "{\"start_us\":0,\"end_us\":800000,\"text\":\"长\"},{\"start_us\":800000,\"end_us\":2000000,\"text\":\"风起\"}]}]}]," +
+                "\"markers\":[{\"id\":\"m1\",\"start_us\":0,\"end_us\":null,\"text\":\"起\",\"author\":\"user\"},{\"id\":\"m2\",\"start_us\":0,\"end_us\":2000000,\"text\":\"\",\"author\":\"agent\"}],\"markers_locked\":false}");
+            Check(upgradeSession.Save(upgraded, null) == "saved", "v2 to v3 upgrade not saved");
+            var v3Read = Clone(new DocumentSession(file).InitialJson);
+            var v3Timeline = (Dictionary<string, object>)v3Read["timeline"];
+            var freeClip = (Dictionary<string, object>)((object[])((Dictionary<string, object>)((object[])v3Timeline["video"])[1])["clips"])[0];
+            Check((string)v3Read["schema"] == DocumentSession.SchemaV3 && Convert.ToInt64(freeClip["start_us"]) == 3000000000L, "v3 timeline lost");
+            var downgraded = Next(upgradeSession, "降级"); downgraded["schema"] = DocumentSession.SchemaV2; downgraded.Remove("timeline");
+            Check(upgradeSession.Save(downgraded, null) == "identity_changed", "v3 downgraded to v2");
+            foreach (string bad in new[] { "missing-shot", "twice", "main-start", "free-shot", "overlap", "range", "fraction", "backslash", "gain", "audio-flag", "duplicate-id", "take-id", "take-range", "marker", "no-main", "v2-timeline" })
+            {
+                var broken = Clone(new DocumentSession(file).InitialJson);
+                var timeline = (Dictionary<string, object>)broken["timeline"];
+                var tracks = (object[])timeline["video"];
+                var main = (Dictionary<string, object>)((object[])((Dictionary<string, object>)tracks[0])["clips"])[0];
+                var free = (Dictionary<string, object>)((object[])((Dictionary<string, object>)tracks[1])["clips"])[0];
+                var sound = (Dictionary<string, object>)((object[])((Dictionary<string, object>)((object[])timeline["audio"])[0])["clips"])[0];
+                if (bad == "missing-shot") main["shot_id"] = "nope";
+                else if (bad == "twice") ((Dictionary<string, object>)tracks[0])["clips"] = new object[] { main, Renamed(main) };
+                else if (bad == "main-start") main["start_us"] = 0;
+                else if (bad == "free-shot") free["shot_id"] = "s1";
+                else if (bad == "overlap") ((Dictionary<string, object>)tracks[1])["clips"] = new object[] { free, Renamed(free) };
+                else if (bad == "range") free["out_us"] = 0;
+                else if (bad == "fraction") free["in_us"] = 1.5m;
+                else if (bad == "backslash") free["source"] = "a\\b.mov";
+                else if (bad == "gain") ((Dictionary<string, object>)tracks[1])["gain"] = 1.5m;
+                else if (bad == "audio-flag") sound["audio"] = true;
+                else if (bad == "duplicate-id") sound["id"] = "c1";
+                else if (bad == "take-id") ((Dictionary<string, object>)((object[])main["takes"])[0])["id"] = "c1";
+                else if (bad == "take-range") ((Dictionary<string, object>)((object[])main["takes"])[0])["out_us"] = 0;
+                else if (bad == "marker") ((Dictionary<string, object>)((object[])timeline["markers"])[1])["end_us"] = 0;
+                else if (bad == "no-main") timeline["video"] = new object[0];
+                else broken["schema"] = DocumentSession.SchemaV2;
+                bool refused = false; try { DocumentSession.Validate(broken); } catch (InvalidDataException) { refused = true; }
+                Check(refused, "invalid v3 model accepted: " + bad);
+            }
             string extra = Path.Combine(root, "03_伪文件_v001_draft.kpldoc");
             File.WriteAllText(extra, "{\"schema\":\"kpl-user-spec-v2\",\"evil\":\"x\"}");
             bool invalidRejected = false; try { new DocumentSession(extra); } catch { invalidRejected = true; }

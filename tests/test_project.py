@@ -279,6 +279,33 @@ class ProjectTests(unittest.TestCase):
         self.assertNotEqual(rc, 0, denied)
         self.assertEqual(self.spec.read_bytes(), before_remove)
 
+    def test_removing_a_shot_unlinks_its_main_track_video(self):
+        root = self.outer / '媒体项目'
+        rc, data = run(PROJECT, 'init', root)
+        self.assertEqual(rc, 0, data)
+        spec = Path(data['spec'])
+        model = json.loads(spec.read_text(encoding='utf-8'))
+        rows = [dict(html_spec.new_shot(ident, number), duration_seconds='2') for ident, number in (('a', 'S01'), ('b', 'S02'))]
+        model.update(schema='kpl-user-spec-v3', shots=rows, timeline={
+            'video': [{'id':'V1', 'name':'', 'muted':False, 'hidden':False, 'locked':False, 'gain':1, 'clips':[
+                {'id':'c1', 'shot_id':'a', 'source':'../07_预演交付/a.mp4', 'in_us':0, 'out_us':2000000, 'audio':True, 'takes':[]},
+                {'id':'c2', 'shot_id':'b', 'source':'../07_预演交付/b.mp4', 'in_us':0, 'out_us':2000000, 'audio':True, 'takes':[]}]}],
+            'audio': [], 'subtitles': [], 'markers': [], 'markers_locked': False})
+        spec.write_text(json.dumps(model, ensure_ascii=False), encoding='utf-8')
+        relative = spec.relative_to(root)
+        rc, selection = run(PROJECT, 'select-spec', '--project', root, '--spec', relative, '--basis', '仅合成测试')
+        self.assertEqual(rc, 0, selection)
+        patch_path = root / '.kpl' / 'tmp' / 'remove.json'
+        patch_path.write_text(json.dumps({'operations':[{'target':'shot', 'action':'remove', 'id':'a', 'old':rows[0], 'new':None,
+                                                        'deletion_authorized':True, 'authorization_ref':'仅合成测试'}]},
+                                         ensure_ascii=False), encoding='utf-8')
+        rc, result = run(SCRIPTS / 'html_spec.py', 'apply', '--project', root, '--spec', relative,
+                         '--expected-sha256', selection['current_spec']['sha256'], '--patch', patch_path)
+        self.assertEqual(rc, 0, result)
+        self.assertIn('timeline:c1', result['affected'])
+        after = json.loads(spec.read_text(encoding='utf-8'))
+        self.assertEqual([clip['id'] for clip in after['timeline']['video'][0]['clips']], ['c2'])
+
     def test_agent_registers_and_updates_assets(self):
         rc, read = run(SCRIPTS / 'html_spec.py', 'read', self.spec)
         self.assertEqual(rc, 0, read)

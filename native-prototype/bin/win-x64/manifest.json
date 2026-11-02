@@ -2,21 +2,23 @@
   "schema": "kpl-editor-bundle-v1",
   "platform": "windows-x64",
   "sdk": "Microsoft.Web.WebView2 1.0.3179.45",
-  "document_schema": "kpl-user-spec-v2",
+  "document_schema": "kpl-user-spec-v3",
   "build_inputs_sha256": {
-    "native-prototype/build.py": "4bdab6c4ff59c1735687abd95701dfd1ddb4b7fd2218aa0c3730278bb20b06de",
-    "scripts/editor_bundle.py": "fad172a6bf0b34654bfd09e0cd7d1ea9c1fd52f1238fa47894619e04457ee131",
-    "scripts/html_spec.py": "3b5da628c0c7168143cce58e7735470a7b22379bea715bd5804cd31a8576bd78",
-    "native-prototype/src/Host.cs": "b7d6d56ce52ba67d735b47da94d52cf2954e99c068ea1933861ee34a0626924b",
-    "native-prototype/src/DocumentSession.cs": "99167100548bf550444820936ad267badbdc2ceb6ba8c12cbb865f25ba5eb4c3",
-    "native-prototype/ui/index.html": "c5705cae251065de1792905a07d1fd43d2abc7a5aaa9521cf6eebbad8cd5cc1c",
+    "native-prototype/build.py": "d6f3a200d004acd6ffb44c000c2247c4ab0287f8a120f77c30c936e713ee39b5",
+    "scripts/editor_bundle.py": "ea5289a358961caa4e673a838aacf3d2cbafb568bd31cd56ee10ce90a37298c5",
+    "scripts/html_spec.py": "6822c27df85fdf4cbf0d6fef6b892084834f1af8faf4c141471aa19cab8a3b61",
+    "native-prototype/src/Host.cs": "f4811b27fb8b0cf356c8cd8a1ba5886fcdd91bb40a72fa89c687e905f1053591",
+    "native-prototype/src/Media.cs": "1152da899ba777af896bd7aa5b068148cf3263d8c490272efc3b496731393e8a",
+    "native-prototype/src/Subtitle.cs": "04245072eb00d017de62bcf21772b803d7c330c82e4bedef5d30d8e4fc5ccab8",
+    "native-prototype/src/DocumentSession.cs": "3c2bc7d0bb46fb73a0ea56865317cb03ef0f9dd8a075a86eb70cbf66d55753ea",
+    "native-prototype/ui/index.html": "88334ce442c83ccd4fb6f2b07cb2d2626b5b5097743fe298b4ea96509bef5326",
     "native-prototype/ui/tokens.css": "ff86eefc3fa08dc0fc001da5b003b8c9a9836f97c19ca9755de9c9bf912f4ba4",
-    "native-prototype/ui/app.css": "e04240577a512e86f5cb665aab79637184b666bf01d97dd7c03208c5fe9ccbd7",
-    "native-prototype/ui/app.js": "51c16cd55a66b651160a33f490df3f5b8f9b6ade8bf0301fa6f479d2535f0066",
+    "native-prototype/ui/app.css": "0cee093a04170b85da34f8efa35c01c74d00f1491b0bb7d656322a55b8d389d9",
+    "native-prototype/ui/app.js": "3ed06d11e53d6566338e236a167b11cc06495b56e3fb0a65f15cca70b32928f3",
     "native-prototype/assets/kpl.ico": "6c17813e0fcc6e60f355f8f5544f65bde4f950ae3d85463c91b5030a5910d901"
   },
   "files_sha256": {
-    "KPL规格编辑器.exe": "1f552d41e01dc1d837fa9c7da04835a9f479b6078aeba557440501daa0552e64",
+    "KPL规格编辑器.exe": "ac16deecd04306caa5127943a9139a5ba72b07366488f60a3d6d504e57144940",
     "Microsoft.Web.WebView2.Core.dll": "37f37a80a2ce89388b30c38185a9ba3af1727a2ebbb59698e13725db770c9816",
     "WebView2Loader.dll": "01f0a861a802233411fe0d406988c211794c0f58ce2edb62ff97c31f5b1aa2fe"
   }

@@ -17,8 +17,27 @@ import uuid
 from contextlib import contextmanager
 
 SCHEMA = 'kpl-user-spec-v2'
+# v3 只比 v2 多一个 timeline（媒体轨与标记）；原生编辑器加入媒体后保存时原地升级，HTML 规格仍是 v2
+SCHEMA_V3 = 'kpl-user-spec-v3'
 ROOT_FIELDS = ('schema', 'document_id', 'version', 'status', 'confirmation', 'revision',
                'title', 'summary', 'global_settings', 'layout_aspect', 'assets', 'shots')
+# 音频轨只能关声音；视频轨可分别关声音（muted）与画面（hidden）；字幕轨只能关画面
+# locked：用户锁定的行，编辑器不让改、Agent 也不改其中内容
+TRACK_FIELDS = {'id', 'name', 'muted', 'locked', 'gain', 'clips'}
+VIDEO_TRACK_FIELDS = TRACK_FIELDS | {'hidden'}
+# 主轨片段由所属镜头的格子定位，没有 start_us；自由视频轨与音轨的片段自带时间位置
+# takes：同一镜头的其他候选版本（多次生成的结果），顶层字段是当前使用的版本；切换就是两者互换
+MAIN_CLIP_FIELDS = {'id', 'shot_id', 'source', 'in_us', 'out_us', 'audio', 'takes'}
+TAKE_FIELDS = {'id', 'source', 'in_us', 'out_us', 'audio'}
+VIDEO_CLIP_FIELDS = {'id', 'start_us', 'source', 'in_us', 'out_us', 'audio'}
+AUDIO_CLIP_FIELDS = {'id', 'start_us', 'source', 'in_us', 'out_us'}
+MARKER_FIELDS = {'id', 'start_us', 'end_us', 'text', 'author'}
+SUBTITLE_TRACK_FIELDS = {'id', 'name', 'language', 'hidden', 'locked', 'cues'}
+CUE_FIELDS = {'id', 'start_us', 'end_us', 'text', 'words'}
+WORD_FIELDS = {'start_us', 'end_us', 'text'}
+CUE_TEXT_LIMIT = 2000
+MAX_US = 24 * 3600 * 1_000_000
+TIMELINE_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}')
 # 文本字段；layout_camera 是预览运镜对象或 null，单独校验
 FIELDS = ('number', 'duration_seconds', 'thumbnail', 'content', 'description', 'shot_scale', 'camera_motion', 'prompt',
           'video_prompt', 'mark')
@@ -71,9 +90,115 @@ def valid_aspect(value):
     return value == '' or bool(match and float(match[1]) > 0 and float(match[2]) > 0)
 
 
+def valid_source(value):
+    """媒体路径相对 .kpldoc 所在目录（素材在其他盘时可为绝对路径），统一用 / 分隔。"""
+    return isinstance(value, str) and value.strip() == value and value != '' and not re.search(r'[\\\x00-\x1f]', value)
+
+
+def _us(value):
+    return type(value) is int and 0 <= value <= MAX_US
+
+
+def validate_timeline(timeline, shot_ids):
+    """时间单位为整数微秒，片段采用素材的 [in_us, out_us)。video[0] 是主轨，序号越大越靠上并覆盖下层；
+    字幕轨独立于音视频轨，条目是不依赖素材的文本，words 为零个或多个逐段时间。"""
+    if (not isinstance(timeline, dict) or set(timeline) != {'video', 'audio', 'subtitles', 'markers', 'markers_locked'}
+            or type(timeline['markers_locked']) is not bool):
+        raise ValueError('invalid timeline structure')
+    video, audio, markers = timeline['video'], timeline['audio'], timeline['markers']
+    subtitles = timeline.get('subtitles')
+    if (not isinstance(video, list) or not video or not isinstance(audio, list) or not isinstance(markers, list)
+            or not isinstance(subtitles, list)):
+        raise ValueError('timeline needs a main video track and track/marker lists')
+    ids, linked = set(), set()
+
+    def new_id(value):
+        if not isinstance(value, str) or not TIMELINE_ID.fullmatch(value) or value in ids:
+            raise ValueError('invalid or duplicate timeline ID: %r' % (value,))
+        ids.add(value)
+
+    for kind, tracks in (('video', video), ('audio', audio)):
+        for index, track in enumerate(tracks):
+            main = kind == 'video' and index == 0
+            if (not isinstance(track, dict) or set(track) != (VIDEO_TRACK_FIELDS if kind == 'video' else TRACK_FIELDS)
+                    or not isinstance(track['name'], str) or type(track['muted']) is not bool
+                    or kind == 'video' and type(track['hidden']) is not bool or type(track['locked']) is not bool
+                    or isinstance(track['gain'], bool)
+                    or not isinstance(track['gain'], (int, float)) or not 0 <= track['gain'] <= 1
+                    or not isinstance(track['clips'], list)):
+                raise ValueError('invalid %s track' % kind)
+            new_id(track['id'])
+            fields = MAIN_CLIP_FIELDS if main else VIDEO_CLIP_FIELDS if kind == 'video' else AUDIO_CLIP_FIELDS
+            spans = []
+            for clip in track['clips']:
+                if not isinstance(clip, dict) or set(clip) != fields or not valid_source(clip['source']):
+                    raise ValueError('invalid clip in track ' + str(track.get('id')))
+                new_id(clip['id'])
+                if not _us(clip['in_us']) or not _us(clip['out_us']) or clip['out_us'] <= clip['in_us']:
+                    raise ValueError('clip %s needs 0 <= in_us < out_us' % clip['id'])
+                if 'audio' in fields and type(clip['audio']) is not bool:
+                    raise ValueError('clip audio flag must be boolean')
+                if main:
+                    # 每个镜头最多关联一个视频
+                    if clip['shot_id'] not in shot_ids or clip['shot_id'] in linked:
+                        raise ValueError('main-track clip must link one existing shot once: ' + str(clip['shot_id']))
+                    linked.add(clip['shot_id'])
+                    if not isinstance(clip['takes'], list):
+                        raise ValueError('clip takes must be a list')
+                    for take in clip['takes']:
+                        if (not isinstance(take, dict) or set(take) != TAKE_FIELDS or not valid_source(take['source'])
+                                or not _us(take['in_us']) or not _us(take['out_us']) or take['out_us'] <= take['in_us']
+                                or type(take['audio']) is not bool):
+                            raise ValueError('invalid take in clip ' + str(clip['id']))
+                        new_id(take['id'])
+                else:
+                    end = clip['start_us'] + clip['out_us'] - clip['in_us'] if _us(clip['start_us']) else -1
+                    if not 0 <= end <= MAX_US:
+                        raise ValueError('clip %s is outside the timeline range' % clip['id'])
+                    spans.append((clip['start_us'], end))
+            spans.sort()
+            if any(a[1] > b[0] for a, b in zip(spans, spans[1:])):
+                raise ValueError('clips on track %s overlap' % track['id'])
+    for track in subtitles:
+        if (not isinstance(track, dict) or set(track) != SUBTITLE_TRACK_FIELDS or not isinstance(track['name'], str)
+                or not isinstance(track['language'], str) or type(track['hidden']) is not bool or type(track['locked']) is not bool
+                or not isinstance(track['cues'], list)):
+            raise ValueError('invalid subtitle track')
+        new_id(track['id'])
+        spans = []
+        for cue in track['cues']:
+            if (not isinstance(cue, dict) or set(cue) != CUE_FIELDS or not _us(cue['start_us'])
+                    or not _us(cue['end_us']) or cue['end_us'] <= cue['start_us']
+                    or not isinstance(cue['text'], str) or len(cue['text']) > CUE_TEXT_LIMIT or not isinstance(cue['words'], list)):
+                raise ValueError('invalid subtitle cue')
+            new_id(cue['id'])
+            last = cue['start_us']
+            for word in cue['words']:
+                # 逐字时间来自 ASS 的卡拉 OK 标签：按顺序、落在本句范围内、互不重叠
+                if (not isinstance(word, dict) or set(word) != WORD_FIELDS or type(word['start_us']) is not int
+                        or type(word['end_us']) is not int or word['end_us'] <= word['start_us']
+                        or word['start_us'] < last or word['end_us'] > cue['end_us'] or not isinstance(word['text'], str)
+                        or not word['text']):
+                    raise ValueError('invalid subtitle word timing in cue ' + str(cue['id']))
+                last = word['end_us']
+            spans.append((cue['start_us'], cue['end_us']))
+        spans.sort()
+        if any(a[1] > b[0] for a, b in zip(spans, spans[1:])):
+            raise ValueError('subtitle cues on track %s overlap' % track['id'])
+    for marker in markers:
+        if (not isinstance(marker, dict) or set(marker) != MARKER_FIELDS or not _us(marker['start_us'])
+                or not (marker['end_us'] is None or _us(marker['end_us']) and marker['end_us'] > marker['start_us'])
+                or not isinstance(marker['text'], str) or marker['author'] not in ('user', 'agent')):
+            raise ValueError('invalid timeline marker')
+        new_id(marker['id'])
+    return timeline
+
+
 def validate(model):
-    """Strict v2 contract: exact fields, unique stable IDs, safe asset paths and known marks."""
-    if (not isinstance(model, dict) or set(model) != set(ROOT_FIELDS) or model.get('schema') != SCHEMA or
+    """Strict v2/v3 contract: exact fields, unique stable IDs, safe asset paths and known marks."""
+    v3 = isinstance(model, dict) and model.get('schema') == SCHEMA_V3
+    if (not isinstance(model, dict) or set(model) != set(ROOT_FIELDS + (('timeline',) if v3 else ())) or
+            model.get('schema') not in (SCHEMA, SCHEMA_V3) or
             not isinstance(model.get('document_id'), str) or not model['document_id'].strip() or
             not isinstance(model.get('version'), str) or
             not re.fullmatch(r'v(?:00[1-9]|0[1-9][0-9]|[1-9][0-9]{2})', model['version']) or
@@ -129,6 +254,8 @@ def validate(model):
             raise ValueError('unknown shot mark')
         if not valid_camera(row['layout_camera']):
             raise ValueError('layout_camera must be null or a static/linear crop camera')
+    if v3:
+        validate_timeline(model['timeline'], ids)
     return model
 
 
@@ -473,6 +600,14 @@ def _apply_changes_locked(root, relative, expected, patch):
         else:
             raise ValueError('unsupported ' + kind + ' operation')
         changed.append(kind + ':' + ident)
+    if 'timeline' in model:
+        # 已授权移除的镜头不再占主轨格子，它关联的视频随之解除
+        shot_ids = {row['id'] for row in model['shots']}
+        main = model['timeline']['video'][0] if isinstance(model['timeline'], dict) and model['timeline'].get('video') else None
+        if main and isinstance(main.get('clips'), list):
+            dropped = [clip for clip in main['clips'] if isinstance(clip, dict) and clip.get('shot_id') not in shot_ids]
+            main['clips'] = [clip for clip in main['clips'] if clip not in dropped]
+            changed.extend('timeline:' + str(clip.get('id')) for clip in dropped)
     if model == original_model:
         return {'ok': True, 'spec': relative, 'sha256': expected, 'affected': [], 'note': '没有实际变化，未写入。'}
     model['revision'] += 1

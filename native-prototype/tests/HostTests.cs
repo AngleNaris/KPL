@@ -59,7 +59,23 @@ internal static class HostTests
             Prefs.SaveWindow(50, 99999, false);
             Check(!Prefs.Window(out w, out h, out max), "out-of-range window size accepted");
 
-            Console.WriteLine("PASS: " + assertions + " thumbnail / prefs assertions");
+            // 媒体路径：相对 .kpldoc 所在目录，统一用 /；不同盘记绝对路径；只解析白名单格式的普通文件
+            string docDir = Path.Combine(root, "项目", "01_项目说明"), mediaDir = Path.Combine(root, "项目", "07_预演交付");
+            Directory.CreateDirectory(docDir); Directory.CreateDirectory(mediaDir);
+            string clip = Path.Combine(mediaDir, "S01 #1.mp4"), text = Path.Combine(mediaDir, "说明.txt");
+            File.WriteAllText(clip, "x"); File.WriteAllText(text, "x");
+            Check(EditorWindow.RelativeSource(docDir, clip) == "../07_预演交付/S01 #1.mp4", "relative media path " + EditorWindow.RelativeSource(docDir, clip));
+            Check(EditorWindow.RelativeSource(docDir, Path.Combine(docDir, "a.wav")) == "a.wav", "same-folder media path");
+            Check(EditorWindow.RelativeSource(@"C:\项目", @"Z:\素材\a.mov") == "Z:/素材/a.mov", "other-drive media path not absolute");
+            Check(EditorWindow.ResolveMedia(docDir, "../07_预演交付/S01 #1.mp4") == clip, "relative media not resolved");
+            Check(EditorWindow.ResolveMedia(docDir, clip.Replace('\\', '/')) == clip, "absolute media not resolved");
+            Check(EditorWindow.ResolveMedia(docDir, "../07_预演交付/说明.txt") == null, "non-media file resolved");
+            Check(EditorWindow.ResolveMedia(docDir, "../07_预演交付/缺失.mp4") == null, "missing media resolved");
+            Check(EditorWindow.ResolveMedia(docDir, "..\\07_预演交付\\S01 #1.mp4") == null, "backslash source accepted");
+            Check(EditorWindow.MediaPath(@"D:\素材 A\S01 #1.mp4") == "https://drive-d.kpl-media.local/%E7%B4%A0%E6%9D%90%20A/S01%20%231.mp4",
+                "media url " + EditorWindow.MediaPath(@"D:\素材 A\S01 #1.mp4"));
+
+            Console.WriteLine("PASS: " + assertions + " thumbnail / prefs / media path assertions");
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine(ex.ToString()); return 1; }

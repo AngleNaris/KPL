@@ -33,7 +33,7 @@ class BundleTests(unittest.TestCase):
     def test_packaged_inputs_and_program_match(self):
         result = editor_bundle.verify(self.bundle)
         self.assertEqual(result['status'], 'matching', result)
-        self.assertEqual(result['document_schema'], 'kpl-user-spec-v2')
+        self.assertEqual(result['document_schema'], 'kpl-user-spec-v3')
         self.assertEqual(result['sdk'], 'Microsoft.Web.WebView2 1.0.3179.45')
 
     def test_source_change_and_binary_change_are_distinct(self):

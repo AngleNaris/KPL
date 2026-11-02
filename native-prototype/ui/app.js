@@ -47,6 +47,7 @@
     doc: saved,
     working: clone(saved),
     selectedId: saved.shots.length ? saved.shots[0].id : null,
+    timelineSel: null,   // 时间线上选中的自由轨条目 {track, id}
     view: 'table',
     editing: false,
     dirty: false,
@@ -129,6 +130,53 @@
       start += length;
     }
     return {placed, pending, total: start};
+  }
+
+  /* 时间线总长：镜头计划总长，与自由轨素材、字幕条目的最晚结束时间取大。
+     多出来的部分只是素材占用的时间，不属于分镜表格，也不改变镜头时长。 */
+  function span() {
+    const planned = plan().total;
+    const t = timeline();
+    if (!t) return planned;
+    let end = planned;
+    for (const track of [...t.video.slice(1), ...t.audio]) {
+      for (const clip of track.clips) end = Math.max(end, (clip.start_us + clip.out_us - clip.in_us) / US);
+    }
+    for (const track of t.subtitles) {
+      for (const cue of track.cues) end = Math.max(end, cue.end_us / US);
+    }
+    for (const marker of t.markers) end = Math.max(end, (marker.end_us === null ? marker.start_us : marker.end_us) / US);
+    return end;
+  }
+
+  /* ---------- 媒体时间线（v3 的 timeline）：文档里是整数微秒，界面按秒换算 ----------
+     video[0] 是主轨：每个镜头最多关联一个视频，位置由镜头格决定；格子宽度始终是镜头时长，
+     视频短于镜头时留空缺，长于镜头时多出的部分不用。 */
+  const SCHEMA_V3 = 'kpl-user-spec-v3';
+  const US = 1e6;
+  const timeline = () => state.working.timeline || null;
+  const mainClip = shot => (timeline() ? timeline().video[0].clips.find(clip => clip.shot_id === shot.id) : null) || null;
+  const clipSeconds = clip => (clip.out_us - clip.in_us) / US;
+  const baseName = source => source.split('/').pop();
+
+  /* 第一次加入媒体时才建立时间线，保存时文档随之从 v2 升级为 v3。 */
+  function ensureTimeline() {
+    if (!state.working.timeline) {
+      state.working.schema = SCHEMA_V3;
+      state.working.timeline = {video: [{id: 'V1', name: '', muted: false, hidden: false, locked: false, gain: 1, clips: []}],
+        audio: [], subtitles: [], markers: [], markers_locked: false};
+    }
+    return state.working.timeline;
+  }
+
+  function newTimelineId(prefix) {
+    const t = ensureTimeline();
+    const used = new Set([...t.video, ...t.audio, ...t.subtitles].flatMap(track =>
+      [track.id, ...(track.clips || []).map(clip => clip.id), ...(track.cues || []).map(cue => cue.id)])
+      .concat(t.markers.map(marker => marker.id)));
+    let id;
+    do id = prefix + Math.random().toString(36).slice(2, 10); while (used.has(id));
+    return id;
   }
 
   /* ---------- 资产引用：@{id | 名称 | 文件名 | 主名 | 路径}，唯一匹配才算解析 ---------- */
@@ -439,6 +487,12 @@
       readonly: !state.editing, tabindex: state.editing || tabbable ? '0' : '-1',
       'aria-invalid': key === 'duration_seconds' && filled(shot[key]) && !DURATION_PATTERN.test(shot[key].trim()) ? 'true' : null});
     input.value = shot[key] || '';
+    if (key === 'duration_seconds') {
+      // 输入过程中的半截数字不联动，改完离开单元格时再按改动前后的镜头位置平移其他轨道
+      let link = null;
+      input.addEventListener('focus', () => { link = state.editing ? linkSnapshot() : null; });
+      input.addEventListener('change', () => { if (link) { applyLink(link); link = linkSnapshot(); changed(); } });
+    }
     input.addEventListener('input', () => {
       shot[key] = input.value;
       if (key === 'duration_seconds') {
@@ -499,10 +553,33 @@
       el('span', {class: 'clip-label'}, [
         el('span', {class: 'clip-id', text: shot.number}),
         el('span', {class: 'clip-dur', text: durationText(shot).replace(' ', '')}),
+        versionBadge(shot),
         markOf(shot.mark) ? markIcon(shot) : null
       ]),
-      state.editing && onTrack ? el('span', {class: 'clip-handle', title: '拖动调整时长'}) : null
+      onTrack ? videoCover(shot) : null,
+      state.editing && onTrack && !mainLocked() ? el('span', {class: 'clip-handle is-start', 'data-edge': 'start',
+        title: '拖动移动与上一镜的切点；按住 Alt 只改本镜时长'}) : null,
+      state.editing && onTrack && !mainLocked() ? el('span', {class: 'clip-handle', 'data-edge': 'end', title: '拖动调整时长'}) : null
     ]);
+  }
+
+  /* 有多个视频版本时，在镜头标签里标出“当前是第几个 / 共几个”。 */
+  function versionBadge(shot) {
+    const clip = mainClip(shot);
+    if (!clip || !clip.takes.length) return null;
+    const versions = versionsOf(clip);
+    return el('span', {class: 'clip-take', title: '视频版本：' + baseName(clip.source),
+      text: (versions.findIndex(version => version.id === clip.id) + 1) + '/' + versions.length});
+  }
+
+  /* 片段底部的覆盖条：实色是视频占用的部分，斜纹是视频短于镜头留下的空缺；素材不可用时整条警告色。 */
+  function videoCover(shot) {
+    const clip = mainClip(shot), length = seconds(shot);
+    if (!clip || length === null) return null;
+    const problem = mediaProblem(clip.source);
+    const node = el('span', {class: 'clip-video' + (problem ? ' is-missing' : ''), title: problem || null}, el('i'));
+    node.style.setProperty('--used', Math.min(1, clipSeconds(clip) / length) * 100 + '%');
+    return node;
   }
 
   function ticks(total, step) {
@@ -516,34 +593,217 @@
 
   /* ---------- 缩放：比例尺为每秒像素数；null 表示适配全部，整条时间线正好铺满可见宽度 ---------- */
   const zoom = {pps: null};
-  const layout = {pps: 0};  // 最近一次排布用的比例尺，播放头、跳转与拖动都按它换算
+  const layout = {pps: 0, gutter: 0};  // 最近一次排布的每秒像素数与左侧抬头宽度；播放头、跳转与拖动都按它们换算
 
   function fitPps() {
-    const total = plan().total;
-    return total > 0 ? $('timeline-scroll').clientWidth / total : 0;
+    const total = span(), width = $('timeline-scroll').clientWidth - layout.gutter;
+    // 视图隐藏或窄于左侧抬头时宽度不为正，不能拿来算比例尺，否则会得到负坐标
+    return total > 0 && width > 0 ? width / total : 0;
   }
+  /* 时间（秒）→ 时间线内的横坐标；泳道内部从 0 起算，跨列的播放头与标记要加抬头宽度。 */
+  const timeX = seconds => seconds * layout.pps;
+  const trackX = seconds => layout.gutter + seconds * layout.pps;
   const currentPps = () => zoom.pps || fitPps();
 
   function renderTimeline() {
     const {placed, pending, total} = plan();
     $('timeline').classList.toggle('is-editing', state.editing);
     // 解锁后即使还没有排布的镜头也保留轨道，作为待定镜头的落点
+    renderLanes();
+    // 泳道重建后再填主轨片段（主轨抬头也由 renderLanes 生成，会整条替换）
     $('track').hidden = total === 0 && !state.editing;
     $('track').replaceChildren(...placed.map(item => clip(item.shot, true)));
     $('pending-lane').hidden = pending.length === 0;
     $('pending-list').replaceChildren(...pending.map(shot => clip(shot, false)));
+    renderMarkers();
+    $('marker-add').setAttribute('aria-disabled', state.editing ? 'false' : 'true');
     layoutTimeline(currentPps());
     renderMonitor();
   }
 
-  /* 按比例尺排布标尺、片段与播放头。拖时长时沿用开始拖动时的比例尺，避免整条时间线跟着缩放。 */
+  /* 轨道自上而下：字幕轨（始终在最上，序号小的更靠上）→ 自由视频轨（序号大的更靠上，覆盖下层）→ 主轨 V1 → 音频轨。 */
+  const mainLane = () => $('lanes').querySelector('.lane-main');
+
+  function renderLanes() {
+    const t = timeline(), lanes = $('lanes'), track = $('track');
+    if (!t) {
+      const main = mainLane();
+      main.replaceChildren(el('div', {class: 'lane-body'}, track));
+      lanes.replaceChildren(main);
+      return;
+    }
+    const rows = [
+      ...t.subtitles.map((track, index) => ({kind: 'subtitle', track, code: 'S' + (index + 1)})),
+      ...t.video.slice(1).map((track, index) => ({kind: 'video', track, code: 'V' + (index + 2)})).reverse(),
+      ...t.audio.map((track, index) => ({kind: 'audio', track, code: 'A' + (index + 1)}))
+    ];
+    const nodes = rows.map(row => laneNode(row));
+    const fresh = [...nodes.filter(row => row.dataset.kind !== 'audio'), laneNode({kind: 'video', track: t.video[0], code: 'V1', main: true}),
+      ...nodes.filter(row => row.dataset.kind === 'audio')];
+    // 已有的轨道就地更新（过渡能在原节点上播放、焦点不丢），新轨道淡入，去掉的直接移除
+    const key = node => node.dataset.kind + ':' + node.dataset.id;
+    const old = new Map([...lanes.children].filter(node => node.dataset.kind).map(node => [key(node), node]));
+    const ordered = fresh.map(node => {
+      const prev = old.get(key(node));
+      if (!prev) return node;
+      old.delete(key(node));
+      syncAttributes(prev, node);
+      morph(prev.querySelector('.lane-head'), node.querySelector('.lane-head'));
+      if (!node.classList.contains('lane-main')) syncKeyed(prev.querySelector('.lane-body'), [...node.querySelector('.lane-body').children], 'data-id');
+      return prev;
+    });
+    for (const node of [...lanes.children]) if (!ordered.includes(node)) node.remove();
+    ordered.forEach((node, index) => { if (lanes.children[index] !== node) lanes.insertBefore(node, lanes.children[index] || null); });
+    // 主轨的泳道里放的是页面原有的 #track
+    const mainBody = lanes.querySelector('.lane-main .lane-body');
+    if (mainBody.firstElementChild !== track) mainBody.replaceChildren(track);
+    // 新建的条目还没有位置；沿用最近一次比例尺立刻排布，不等下一次 layoutTimeline
+    if (layout.pps > 0) layoutLanes(layout.pps);
+    markLaneSelection();
+  }
+
+  function syncAttributes(old, fresh) {
+    for (const {name} of [...old.attributes]) if (!fresh.hasAttribute(name)) old.removeAttribute(name);
+    for (const {name, value} of [...fresh.attributes]) if (old.getAttribute(name) !== value) old.setAttribute(name, value);
+  }
+
+  /* 把 fresh 的属性与子节点同步到 old 上，尽量保留原节点。只用于没有绑定事件闭包的节点（轨道抬头按钮用委托处理）；
+     标签不同时直接换成新节点。 */
+  function morph(old, fresh) {
+    syncAttributes(old, fresh);
+    const before = [...old.childNodes], after = [...fresh.childNodes];
+    after.forEach((child, index) => {
+      const prev = before[index];
+      if (prev && prev.nodeType === 1 && child.nodeType === 1 && prev.tagName === child.tagName) morph(prev, child);
+      else if (prev && prev.nodeType === 3 && child.nodeType === 3) { if (prev.data !== child.data) prev.data = child.data; }
+      else if (prev) old.replaceChild(child, prev);
+      else old.append(child);
+    });
+    for (const extra of before.slice(after.length)) extra.remove();
+  }
+
+  /* 按 key 复用容器里的子节点：留下的就地同步，新来的淡入（@starting-style），去掉的淡出后再移除。 */
+  function syncKeyed(container, fresh, key) {
+    const old = new Map([...container.children].filter(node => !node.classList.contains('is-leaving'))
+      .map(node => [node.getAttribute(key), node]));
+    for (const node of fresh) {
+      const prev = old.get(node.getAttribute(key));
+      if (prev) { morph(prev, node); old.delete(node.getAttribute(key)); } else container.append(node);
+    }
+    for (const node of old.values()) {
+      node.classList.add('is-leaving');
+      setTimeout(() => node.remove(), reducedMotion() ? 0 : 200);
+    }
+  }
+
+  /* 一条轨道：左侧抬头写轨道编号、开关、锁与菜单，右侧泳道里放片段。主轨的泳道由 renderLanes 放入页面原有的 #track。
+     抬头按钮不绑闭包，点击由 #lanes 上的委托处理（setupLaneHeads），这样重绘时可以复用节点。 */
+  function laneNode({kind, track, code, main}) {
+    const label = code;   // 轨道只显示编号，不显示名称
+    // 开关写在文档里，与片段的声音开关一样只在解锁后可改；只读时照样显示状态。按下（aria-pressed）表示已关闭
+    const toggle = (field, name, offIcon, onIcon) => el('button', {type: 'button', class: 'btn btn-quiet btn-icon lane-mute',
+      title: (track[field] ? '打开' : '关闭') + name, 'aria-pressed': String(track[field]), 'aria-label': label + ' 关闭' + name,
+      'aria-disabled': state.editing ? null : 'true', 'data-act': field}, [icon(track[field] ? offIcon : onIcon)]);
+    const picture = kind !== 'audio' ? toggle('hidden', '画面', 'eye-off', 'eye') : null;
+    const sound = kind !== 'subtitle' ? toggle('muted', '声音', 'mute', 'volume') : null;
+    const off = kind === 'audio' ? track.muted : track.hidden;
+    const lock = el('button', {type: 'button', class: 'btn btn-quiet btn-icon lane-mute lane-lock',
+      title: track.locked ? '解锁这一行' : '锁定这一行', 'aria-pressed': String(track.locked), 'aria-label': label + ' 锁定',
+      'aria-disabled': state.editing ? null : 'true', 'data-act': 'locked'}, [icon(track.locked ? 'lock' : 'unlock')]);
+    // 轨道操作都要解锁后才能用；只读时变灰，不弹出空菜单
+    const more = el('button', {type: 'button', class: 'btn btn-quiet btn-icon lane-mute', title: '轨道操作', 'aria-haspopup': 'menu',
+      'aria-expanded': 'false', 'aria-label': label + ' 轨道操作', 'aria-disabled': state.editing ? null : 'true', 'data-act': 'more'},
+      [icon('more')]);
+    const body = el('div', {class: 'lane-body'});
+    if (!main && kind === 'subtitle') body.append(...track.cues.map(cue => cueNode(cue, track)));
+    else if (!main) for (const clip of track.clips) body.append(mediaClipNode(clip, track));
+    return el('div', {class: 'lane lane-' + kind + (main ? ' lane-main' : '') + (track.locked ? ' is-locked' : ''),
+      'data-kind': kind, 'data-id': track.id},
+      [el('div', {class: 'lane-head'}, [
+        el('span', {class: 'lane-name' + (off ? ' is-off' : ''), text: label, title: label}), picture, sound, lock, more
+      ]), body]);
+  }
+
+  function toggleLock(track, label) {
+    if (!state.editing) return;
+    editLane(track.locked ? label + ' 已解锁。' : label + ' 已锁定：不能拖动、裁剪或删除其中的内容，联动也不移动它。', () => {
+      track.locked = !track.locked;
+    });
+  }
+
+  /* 轨道操作：清空本轨（片段与字幕条目都在轨道里），或把整条轨从时间线上移除。主轨 V1 不能移除。 */
+  function openTrackActions(trigger, kind, track, label) {
+    openMenu({trigger, align: 'start', label: label + ' 轨道操作', restore: () => trigger.focus(), items: trackItems(kind, track, label)});
+  }
+
+  /* 轨道的操作项，抬头的“⋯”与右键共用。 */
+  function trackItems(kind, track, label) {
+    if (!state.editing) return [];
+    const flip = (field, name) => ({label: (track[field] ? '打开' : '关闭') + name,
+      icon: icon(field === 'hidden' ? (track.hidden ? 'eye' : 'eye-off') : (track.muted ? 'volume' : 'mute')),
+      pick: () => { track[field] = !track[field]; changed(); }});
+    return [
+      kind !== 'audio' ? flip('hidden', '画面') : null,
+      kind !== 'subtitle' ? flip('muted', '声音') : null,
+      {label: track.locked ? '解锁这一行' : '锁定这一行', icon: icon(track.locked ? 'unlock' : 'lock'), pick: () => toggleLock(track, label)},
+      track.locked ? null : {label: '清空轨道', icon: icon('trash'), pick: () => editLane('已清空 ' + label + '。', () => {
+        if (kind === 'subtitle') track.cues.length = 0; else track.clips.length = 0;
+        state.timelineSel = null;
+      })},
+      track.locked || kind === 'video' && track === timeline().video[0] ? null : {label: '移除轨道', icon: icon('alert'), pick: () => editLane('已移除 ' + label + '。', () => {
+        const t = timeline();
+        (kind === 'subtitle' ? t.subtitles : kind === 'audio' ? t.audio : t.video).splice(
+          (kind === 'subtitle' ? t.subtitles : kind === 'audio' ? t.audio : t.video).indexOf(track), 1);
+        state.timelineSel = null;
+      })}
+    ].filter(Boolean);
+  }
+
+  /* 左右边缘的裁剪手柄；只读或锁定时不出现。data-handle 说明拖的是哪一边。 */
+  const edgeHandles = (cls, locked) => state.editing && !locked ? [
+    el('span', {class: cls + ' is-start', 'data-handle': 'start', title: '拖动裁剪开头'}),
+    el('span', {class: cls, 'data-handle': 'end', title: '拖动裁剪结尾'})
+  ] : [];
+
+  /* 自由轨上的片段：位置与长度由文档里的 in/out 决定，不是镜头格；宽度按比例尺算，排布时才定。 */
+  function mediaClipNode(clip, track) {
+    return el('div', {class: 'media-clip', 'data-id': clip.id, 'data-track': track.id, role: 'button', tabindex: state.editing ? '0' : '-1',
+      title: baseName(clip.source)}, [
+      el('span', {class: 'media-clip-name', text: baseName(clip.source)}),
+      ...edgeHandles('media-clip-handle', track.locked)
+    ]);
+  }
+
+  /* 字幕条目：文字就是条目本身；逐字时间只用于高亮，不额外占位。 */
+  function cueNode(cue, track) {
+    return el('div', {class: 'cue', 'data-id': cue.id, 'data-track': track.id, role: 'button', tabindex: state.editing ? '0' : '-1',
+      title: cue.text}, [
+      el('span', {class: 'cue-text', text: cue.text}),
+      ...edgeHandles('media-clip-handle', track.locked)
+    ]);
+  }
+
+  /* 按比例尺排布标尺、片段与播放头。拖时长时沿用开始拖动时的比例尺，避免整条时间线跟着缩放。
+     左侧抬头占 --gutter 宽度；标尺与泳道在第 2 列，内部坐标从 0 起算，只有跨列的播放头要加这段偏移。 */
   function layoutTimeline(pps) {
-    const {placed, total} = plan();
-    layout.pps = pps;
-    $('timeline').style.inlineSize = total * pps + 'px';
+    const {placed, total: planned} = plan();
+    const total = span();
+    const gutter = layout.gutter = parseFloat(getComputedStyle($('timeline')).getPropertyValue('--gutter')) || 0;
+    layout.pps = pps > 0 ? pps : 0;
+    if (!layout.pps) { placePlayhead(); return; }   // 视图隐藏时先不排，等切回来再按真实宽度算
+    $('timeline').style.inlineSize = gutter + total * pps + 'px';
+    // 镜头计划之外被素材撑出来的部分：斜纹底 + 分界线，提示这段时间不属于分镜表格
+    const beyond = $('beyond'), extra = Math.max(0, total - planned);
+    beyond.hidden = extra <= 1e-6;
+    if (extra > 1e-6) {
+      beyond.style.left = gutter + planned * pps + 'px';
+      beyond.style.inlineSize = extra * pps + 'px';
+    }
     const [step, parts] = TICK_STEPS.find(([candidate]) => candidate * pps >= TICK_GAP) || TICK_STEPS[TICK_STEPS.length - 1];
     $('ruler').style.setProperty('--minor', step * pps / parts + 'px');
     const marks = total > 0 ? ticks(total, step) : [];
+    // 末尾刻度离上一个太近时只画刻度线、不写数字，免得两个标签叠在一起
+    if (marks.length > 1 && (marks[marks.length - 1].at - marks[marks.length - 2].at) * pps < TICK_GAP * 0.9) marks[marks.length - 1].label = false;
     $('ruler').replaceChildren(...marks.map(({at, label}, index) => {
       const node = el('div', {class: 'tick' + (index === 0 ? ' first' : '') + (index === marks.length - 1 ? ' last' : '')},
         label ? el('span', {text: round(at) + ' 秒'}) : null);
@@ -555,10 +815,614 @@
       if (!node) continue;
       node.style.left = item.start * pps + 'px';
       node.style.width = item.length * pps + 'px';
-      if (dragging && item.shot === dragging.shot) node.querySelector('.clip-dur').textContent = round(item.length) + '秒';
+      if (dragging) node.querySelector('.clip-dur').textContent = round(item.length) + '秒';
     }
+    layoutLanes(pps);
     placePlayhead();
     updateNav();
+  }
+
+  /* 自由轨上的视频/音频片段与字幕条目：位置与长度都来自文档，按比例尺换算成像素。 */
+  function layoutLanes(pps) {
+    const t = timeline();
+    if (!t) return;
+    for (const lane of $('lanes').querySelectorAll('.lane[data-kind]')) {
+      if (lane.dataset.kind === 'video' && lane.classList.contains('lane-main')) continue;
+      const track = (lane.dataset.kind === 'subtitle' ? t.subtitles : lane.dataset.kind === 'audio' ? t.audio : t.video)
+        .find(candidate => candidate.id === lane.dataset.id);
+      if (!track) continue;
+      for (const node of lane.querySelectorAll('.media-clip')) {
+        const clip = track.clips.find(candidate => candidate.id === node.dataset.id);
+        if (!clip) continue;
+        node.style.left = clip.start_us / US * pps + 'px';
+        node.style.width = Math.max(2, (clip.out_us - clip.in_us) / US * pps) + 'px';
+      }
+      for (const node of lane.querySelectorAll('.cue')) {
+        const cue = track.cues.find(candidate => candidate.id === node.dataset.id);
+        if (!cue) continue;
+        node.style.left = cue.start_us / US * pps + 'px';
+        node.style.width = Math.max(2, (cue.end_us - cue.start_us) / US * pps) + 'px';
+      }
+    }
+    for (const node of $('marker-band').querySelectorAll('.marker')) {
+      const marker = t.markers.find(candidate => candidate.id === node.dataset.marker);
+      if (!marker) continue;
+      node.style.left = marker.start_us / US * pps + 'px';
+      node.style.width = marker.end_us === null ? '' : Math.max(6, (marker.end_us - marker.start_us) / US * pps) + 'px';
+    }
+  }
+
+  /* ---------- 标记：一个时间点或一段范围上的说明，用户与 Agent 都可以写（author 区分），随文档保存 ---------- */
+  const selectedMarker = () => {
+    const sel = state.timelineSel, t = timeline();
+    return sel && sel.marker && t ? t.markers.find(marker => marker.id === sel.id) || null : null;
+  };
+
+  function markerNode(marker) {
+    const range = marker.end_us !== null;
+    return el('div', {class: 'marker' + (range ? ' is-range' : '') + (marker.author === 'agent' ? ' is-agent' : ''),
+      'data-marker': marker.id, role: 'button', tabindex: '0', title: marker.text || (range ? '范围标记' : '标记')}, [
+      el('span', {class: 'marker-text', text: marker.text}),
+      ...(range ? edgeHandles('marker-handle', markersLocked()) : [])
+    ]);
+  }
+
+  function renderMarkers() {
+    const t = timeline(), locked = markersLocked();
+    syncKeyed($('marker-band'), t ? t.markers.map(markerNode) : [], 'data-marker');
+    $('marker-band').classList.toggle('is-locked', locked);
+    const lock = $('markers-lock');
+    lock.setAttribute('aria-pressed', String(locked));
+    lock.setAttribute('aria-disabled', state.editing ? 'false' : 'true');
+    lock.title = locked ? '解锁标记' : '锁定标记';
+    lock.querySelector('use').setAttribute('href', locked ? '#i-lock' : '#i-unlock');
+    if (layout.pps > 0) layoutLanes(layout.pps);
+    markLaneSelection();
+  }
+
+  function toggleMarkersLock() {
+    if (!state.editing) return;
+    editLane(markersLocked() ? '标记已解锁。' : '标记已锁定：不能新增、移动、改写或删除，联动也不移动它们。', () => {
+      ensureTimeline().markers_locked = !markersLocked();
+    });
+  }
+
+  function selectMarker(id) {
+    state.timelineSel = {marker: true, id};
+    markLaneSelection();
+    syncDetail();
+  }
+
+  /* 在播放头加一个点标记；同一时刻已有点标记就直接选中它。 */
+  function addMarker() {
+    if (!state.editing) return;
+    if (markersLocked()) { status(LOCKED); return; }
+    const t = ensureTimeline(), at = snapUs(preview.time * US);
+    const same = t.markers.find(marker => marker.end_us === null && marker.start_us === at);
+    if (same) { selectMarker(same.id); focusDetailText(); return; }
+    editLane('已添加标记：在右侧填写说明。', () => {
+      const marker = {id: newTimelineId('m'), start_us: at, end_us: null, text: '', author: 'user'};
+      t.markers.push(marker);
+      t.markers.sort((a, b) => a.start_us - b.start_us);
+      state.timelineSel = {marker: true, id: marker.id};
+    });
+    focusDetailText();
+  }
+
+  /* 右键菜单：只列当前位置可用的操作；“在此处……”先把播放头移到右键的位置。只读时只有查看类操作。 */
+  function setupContextMenu() {
+    $('timeline-scroll').addEventListener('contextmenu', event => {
+      const items = contextItems(event).filter(Boolean);
+      event.preventDefault();
+      if (!items.length) return;
+      const point = new DOMRect(event.clientX, event.clientY, 0, 0);
+      openMenu({anchor: {getBoundingClientRect: () => point}, align: 'start', label: '时间线操作', restore: () => {}, items});
+    });
+  }
+
+  function contextItems(event) {
+    const target = event.target, editing = state.editing, here = () => seekAt(event.clientX);
+    const markerItems = () => editing && !markersLocked() ? [{label: '在此处添加标记', icon: icon('marker'), hint: 'M', pick: () => { here(); addMarker(); }}] : [];
+    const node = target.closest('.marker');
+    if (node) {
+      selectMarker(node.dataset.marker);
+      return [
+        {label: '编辑说明', icon: icon('text'), pick: focusDetailText},
+        editing && !markersLocked() ? {label: '删除标记', icon: icon('trash'), hint: 'Delete', pick: deleteItem} : null,
+        editing ? {label: markersLocked() ? '解锁标记' : '锁定标记', icon: icon(markersLocked() ? 'unlock' : 'lock'), pick: toggleMarkersLock} : null
+      ];
+    }
+    if (target.closest('#marker-band, #ruler')) return markerItems();
+    const item = target.closest('.media-clip, .cue');
+    if (item) {
+      laneSelect(item);
+      const found = selectedItem(), label = laneLabel(found.kind, found.track), free = editing && !found.track.locked;
+      return [
+        found.kind === 'subtitle' ? {label: '编辑文字', icon: icon('text'), pick: focusDetailText} : null,
+        free ? {label: '在此处分割', icon: icon('cut'), hint: 'Ctrl+K', pick: () => { here(); splitItem(); }} : null,
+        free ? {label: '删除', icon: icon('trash'), hint: 'Delete', pick: deleteItem} : null,
+        editing ? {label: found.track.locked ? '解锁这一行' : '锁定这一行', icon: icon(found.track.locked ? 'unlock' : 'lock'),
+          pick: () => toggleLock(found.track, label)} : null
+      ];
+    }
+    const shotNode = target.closest('#track .clip');
+    if (shotNode) {
+      const shot = shotById(shotNode.dataset.id), clip = shot && mainClip(shot), free = editing && !mainLocked();
+      select(shot.id);
+      return [
+        ...(free ? videoItems(shot) : []),
+        editing && timeline() ? {label: mainLocked() ? '解锁这一行' : '锁定这一行', icon: icon(mainLocked() ? 'unlock' : 'lock'),
+          pick: () => toggleLock(timeline().video[0], 'V1')} : null,
+        ...markerItems()
+      ];
+    }
+    const lane = target.closest('.lane[data-kind]');
+    if (!lane) return [];
+    const t = timeline(), kind = lane.dataset.kind;
+    const track = t && (kind === 'subtitle' ? t.subtitles : kind === 'audio' ? t.audio : t.video).find(item => item.id === lane.dataset.id);
+    if (!track) return markerItems();
+    if (target.closest('.lane-head')) return trackItems(kind, track, laneLabel(kind, track));
+    const open = editing && !track.locked, main = track === t.video[0];
+    return [
+      open && kind === 'subtitle' ? {label: '在此处新建字幕', icon: icon('text'), pick: () => { here(); addCue(track); }} : null,
+      open && kind === 'video' && !main ? {label: '在此处插入视频…', icon: icon('film'), pick: () => { here(); insertMedia('video', track); }} : null,
+      open && kind === 'audio' ? {label: '在此处插入音频…', icon: icon('volume'), pick: () => { here(); insertMedia('audio', track); }} : null,
+      ...markerItems(),
+      ...trackItems(kind, track, laneLabel(kind, track))
+    ];
+  }
+
+  /* 轨道的显示名：只用编号 S1、V2、A1，与抬头一致。 */
+  function laneLabel(kind, track) {
+    const t = timeline();
+    const code = kind === 'subtitle' ? 'S' + (t.subtitles.indexOf(track) + 1)
+      : kind === 'audio' ? 'A' + (t.audio.indexOf(track) + 1) : 'V' + (t.video.indexOf(track) + 1);
+    return code;
+  }
+
+  function setupEditToggles() {
+    const sync = () => {
+      $('snap-toggle').setAttribute('aria-pressed', String(snapOn()));
+      $('link-toggle').setAttribute('aria-pressed', String(linkOn()));
+    };
+    $('snap-toggle').addEventListener('click', toggleSnap);
+    $('link-toggle').addEventListener('click', () => {
+      prefs.link = !linkOn();
+      sync(); savePrefs();
+      status(linkOn() ? '联动已打开：镜头时长变化时，其他轨道的条目跟着平移。' : '联动已关闭：改镜头时长不再移动其他轨道。');
+    });
+    sync();
+  }
+
+  function toggleSnap() {
+    prefs.snap = !snapOn();
+    $('snap-toggle').setAttribute('aria-pressed', String(snapOn()));
+    savePrefs();
+    status(snapOn() ? '吸附已打开。' : '吸附已关闭：只按 0.1 秒取整。');
+  }
+
+  /* 标记带：点选标记；解锁后拖动标记移动、拖范围标记两侧调整起止，在空白处拖动画出新的范围标记。 */
+  function setupMarkers() {
+    const band = $('marker-band');
+    let drag = null;
+    const timeAt = clientX => (clientX - band.getBoundingClientRect().left) / layout.pps * US;
+    band.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || !layout.pps) return;
+      const node = event.target.closest('.marker');
+      if (node) selectMarker(node.dataset.marker);
+      else if (state.timelineSel && state.timelineSel.marker) { state.timelineSel = null; markLaneSelection(); syncDetail(); }
+      if (!state.editing || markersLocked()) return;
+      event.preventDefault();
+      const marker = node ? timeline().markers.find(item => item.id === node.dataset.marker) : null;
+      drag = {marker, x: event.clientX, from: timeAt(event.clientX), before: JSON.stringify(state.working), moved: false, created: false,
+        edge: node && event.target.dataset.handle || null, start: marker && marker.start_us, end: marker && marker.end_us,
+        targets: snapTargets(new Set(marker ? [marker] : []))};
+      band.setPointerCapture(event.pointerId);
+      if (node) node.focus();
+    });
+    band.addEventListener('pointermove', event => {
+      if (!drag) return;
+      if (!drag.moved && Math.abs(event.clientX - drag.x) < 3) return;
+      drag.moved = true;
+      const raw = (event.clientX - drag.x) / layout.pps * US, MIN = 100000;
+      if (!drag.marker) {
+        const from = settle(drag.from, [0], drag.targets, layout.pps);
+        drag.marker = {id: newTimelineId('m'), start_us: from, end_us: from + MIN, text: '', author: 'user'};
+        drag.created = true;
+        drag.from = from;
+        ensureTimeline().markers.push(drag.marker);
+        state.timelineSel = {marker: true, id: drag.marker.id};
+        renderMarkers();
+      }
+      const marker = drag.marker;
+      if (drag.created) {
+        const at = settle(timeAt(event.clientX), [0], drag.targets, layout.pps);
+        marker.start_us = Math.min(drag.from, at);
+        marker.end_us = Math.max(marker.start_us + MIN, Math.max(drag.from, at));
+      } else if (drag.edge === 'end') {
+        marker.end_us = Math.max(drag.start + MIN, settle(drag.end + raw, [0], drag.targets, layout.pps));
+      } else if (drag.edge === 'start') {
+        marker.start_us = Math.min(drag.end - MIN, settle(drag.start + raw, [0], drag.targets, layout.pps));
+      } else {
+        const range = drag.end === null ? 0 : drag.end - drag.start;
+        marker.start_us = settle(drag.start + raw, range ? [0, range] : [0], drag.targets, layout.pps);
+        if (drag.end !== null) marker.end_us = marker.start_us + range;
+      }
+      layoutTimeline(layout.pps);
+    });
+    const finish = () => {
+      if (!drag) return;
+      const {moved, before, created} = drag;
+      drag = null;
+      showSnap(null);
+      if (!moved) return;
+      timeline().markers.sort((a, b) => a.start_us - b.start_us);
+      remember(before);
+      changed();
+      syncDetail(true);
+      status(created ? '已添加范围标记：在右侧填写说明。' : '已调整标记。');
+      if (created) focusDetailText();
+    };
+    band.addEventListener('pointerup', finish);
+    band.addEventListener('pointercancel', finish);
+    $('marker-add').addEventListener('click', addMarker);
+    $('markers-lock').addEventListener('click', toggleMarkersLock);
+  }
+
+  /* ---------- 自由轨编辑：选中、移动、右缘裁剪、分割、删除与撤销 ----------
+     每次改动前把整份文档拍一张快照压栈；撤销与重做就是换回快照，栈只留在内存里、不写进文档。
+     吸附与主轨一致，按 0.1 秒取整。 */
+  const UNDO_LIMIT = 50;
+
+  /* 锁定：写在文档里（轨道 locked、时间线 markers_locked）。锁定的行不能拖动、裁剪、分割、删除或新增，联动也不移动它；
+     选中、开关画面与声音照常。 */
+  const markersLocked = () => Boolean(timeline() && timeline().markers_locked);
+  const mainLocked = () => Boolean(timeline() && timeline().video[0].locked);
+  const LOCKED = '这一行已锁定，先在左侧解锁。';
+
+  /* 吸附：拖动时某条边离任何条目边缘、镜头切点、标记或播放头不到 8 像素就贴上去，并显示吸附线；
+     关掉吸附时只按 0.1 秒取整。开关是界面偏好（snap），默认打开。 */
+  const SNAP_PX = 8;
+  const snapOn = () => prefs.snap !== false;
+  const linkOn = () => prefs.link !== false;
+
+  function snapTargets(skip) {
+    const t = timeline(), out = [0, Math.round(preview.time * US)];
+    for (const {start, length} of plan().placed) out.push(Math.round(start * US), Math.round((start + length) * US));
+    if (!t) return out;
+    for (const track of [...t.video.slice(1), ...t.audio]) {
+      for (const clip of track.clips) if (!skip.has(clip)) out.push(clip.start_us, clip.start_us + clip.out_us - clip.in_us);
+    }
+    for (const track of t.subtitles) for (const cue of track.cues) if (!skip.has(cue)) out.push(cue.start_us, cue.end_us);
+    for (const marker of t.markers) if (!skip.has(marker)) out.push(marker.start_us, ...(marker.end_us === null ? [] : [marker.end_us]));
+    return out;
+  }
+
+  function showSnap(at) {
+    const line = $('snap-line');
+    line.hidden = at === null;
+    if (at !== null) line.style.left = trackX(at / US) + 'px';
+  }
+
+  /* 求锚点的位置（微秒）。offsets 是锚点到各条会贴靠的边的距离；有边靠近目标就整体贴过去，否则按 0.1 秒取整。 */
+  function settle(raw, offsets, targets, pps) {
+    if (snapOn() && targets) {
+      const limit = SNAP_PX / pps * US;
+      let best = null;
+      for (const offset of offsets) {
+        for (const target of targets) {
+          const shift = target - (raw + offset);
+          if (Math.abs(shift) <= limit && (!best || Math.abs(shift) < Math.abs(best.shift))) best = {shift, at: target};
+        }
+      }
+      if (best) { showSnap(best.at); return Math.max(0, Math.round(raw + best.shift)); }
+    }
+    showSnap(null);
+    return snapUs(raw);
+  }
+
+  /* 联动：镜头时长变了，让其他轨道的条目跟着它开始时所在的镜头走（镜头计划之后的跟着总长走）。
+     base 是改动前拍下的镜头开始时间与条目位置；锁定的行不参与。平移后若同一轨道挤在一起，按顺序往后推开。 */
+  function linkSnapshot() {
+    const t = timeline();
+    if (!linkOn() || !t) return null;
+    const {placed, total} = plan(), items = [];
+    for (const track of [...t.video.slice(1), ...t.audio]) {
+      if (!track.locked) for (const clip of track.clips) items.push({item: clip, kind: 'clip', track, start: clip.start_us});
+    }
+    for (const track of t.subtitles) if (!track.locked) for (const cue of track.cues) items.push({item: cue, kind: 'subtitle', track, start: cue.start_us});
+    if (!t.markers_locked) for (const marker of t.markers) items.push({item: marker, kind: 'marker', track: null, start: marker.start_us});
+    return {cuts: placed.map(entry => [entry.shot.id, Math.round(entry.start * US)]), total: Math.round(total * US), items};
+  }
+
+  /* stay：只把条目放回拍快照时的位置（移动切点不改总长，其他轨道不动）。 */
+  function applyLink(base, stay) {
+    if (!base) return;
+    const {placed, total} = plan(), now = new Map(placed.map(entry => [entry.shot.id, Math.round(entry.start * US)]));
+    const shift = Math.round(total * US) - base.total;
+    const map = time => {
+      if (stay) return time;
+      if (time >= base.total) return time + shift;
+      let owner = null;
+      for (const cut of base.cuts) { if (cut[1] <= time) owner = cut; else break; }
+      return owner && now.has(owner[0]) ? time - owner[1] + now.get(owner[0]) : time;
+    };
+    const moveTo = (entry, start) => {
+      const item = entry.item;
+      if (entry.kind === 'subtitle') moveCue(item, start, start + item.end_us - item.start_us);
+      else if (entry.kind === 'marker') { if (item.end_us !== null) item.end_us += start - item.start_us; item.start_us = start; }
+      else item.start_us = start;
+    };
+    for (const entry of base.items) moveTo(entry, Math.max(0, map(entry.start)));
+    const tracks = new Set(base.items.map(entry => entry.track).filter(Boolean));
+    for (const track of tracks) {
+      const kind = track.cues ? 'subtitle' : 'clip';
+      let end = 0;
+      for (const item of (track.cues || track.clips).slice().sort((a, b) => a.start_us - b.start_us)) {
+        const span = spanOf(item, kind);
+        if (span.start < end) moveTo({item, kind}, end);
+        end = Math.max(end, spanOf(item, kind).end);
+      }
+    }
+  }
+
+  const remember = before => {
+    history.past.push(before);
+    if (history.past.length > UNDO_LIMIT) history.past.shift();
+    history.future.length = 0;
+  };
+  const history = {past: [], future: []};
+  // 绝对时间不能为负；拖动量是有符号增量，负数必须保留，否则条目只能往右走
+  const snapUs = value => Math.max(0, Math.round(value / 100000) * 100000);
+  const snapDelta = value => Math.round(value / 100000) * 100000;
+
+  function findTrack(trackId) {
+    const t = timeline();
+    if (!t) return null;
+    for (const [kind, list] of [['subtitle', t.subtitles], ['video', t.video], ['audio', t.audio]]) {
+      const track = list.find(item => item.id === trackId);
+      if (track) return {track, kind, items: (kind === 'subtitle' ? track.cues : track.clips).slice()};
+    }
+    return null;
+  }
+
+  const spanOf = (item, kind) => kind === 'subtitle'
+    ? {start: item.start_us, end: item.end_us}
+    : {start: item.start_us, end: item.start_us + item.out_us - item.in_us};
+
+  /* 字段时间与所属条目绑定：移动时整体平移，裁剪时把越界的时间收进条目，完全超出的丢弃。
+     校验要求每段时间按顺序、落在条目之内、互不重叠，所以这里不能只改条目本身。 */
+  function moveCue(cue, start, end) {
+    const delta = start - cue.start_us;
+    cue.start_us = start;
+    cue.end_us = end;
+    cue.words = cue.words.map(word => ({...word, start_us: word.start_us + delta, end_us: word.end_us + delta}))
+      .filter(word => word.start_us >= start && word.end_us <= end);
+  }
+
+  function trimCue(cue, end) {
+    cue.end_us = end;
+    cue.words = cue.words.filter(word => word.end_us <= end)
+      .map(word => word);
+  }
+
+  /* 同一轨道里上一个的结尾与下一个的开头：移动与裁剪都不允许越过它们。items 是 findTrack 取出的条目副本列表。 */
+  function neighbours(items, kind, item) {
+    const spans = items.filter(other => other !== item).map(other => ({item: other, ...spanOf(other, kind)}))
+      .sort((a, b) => a.start - b.start);
+    const at = spanOf(item, kind);
+    const before = spans.filter(span => span.end <= at.start).pop();
+    const after = spans.find(span => span.start >= at.end);
+    return {min: before ? before.end : 0, max: after ? after.start : Infinity};
+  }
+
+  function selectedItem() {
+    const sel = state.timelineSel;
+    if (!sel) return null;
+    const found = findTrack(sel.track);
+    const item = found && found.items.find(entry => entry.id === sel.id);
+    return item ? {...found, item} : null;
+  }
+
+  function markLaneSelection() {
+    const sel = state.timelineSel;
+    markSelection();
+    for (const node of $('lanes').querySelectorAll('.media-clip, .cue')) {
+      const selected = Boolean(sel && !sel.marker && node.dataset.id === sel.id);
+      node.classList.toggle('is-selected', selected);
+      node.setAttribute('aria-pressed', String(selected));
+    }
+    for (const node of $('marker-band').querySelectorAll('.marker')) {
+      const selected = Boolean(sel && sel.marker && node.dataset.marker === sel.id);
+      node.classList.toggle('is-selected', selected);
+      node.setAttribute('aria-pressed', String(selected));
+    }
+  }
+
+  function laneSelect(node) {
+    state.timelineSel = node ? {track: node.dataset.track, id: node.dataset.id} : null;
+    markLaneSelection();
+    syncDetail();
+  }
+
+  /* 拍快照后执行修改，再统一刷新；reason 只用于状态栏提示。 */
+  function editLane(reason, mutate) {
+    history.past.push(JSON.stringify(state.working));
+    if (history.past.length > UNDO_LIMIT) history.past.shift();
+    history.future.length = 0;
+    mutate();
+    changed();
+    markLaneSelection();
+    syncDetail(true);
+    status(reason);
+  }
+
+  function timeTravel(back) {
+    const from = back ? history.past : history.future, to = back ? history.future : history.past;
+    if (!from.length) { status(back ? '没有可撤销的修改。' : '没有可重做的修改。'); return; }
+    to.push(JSON.stringify(state.working));
+    state.working = JSON.parse(from.pop());
+    state.dirty = true;
+    if (!shotById(state.selectedId)) state.selectedId = shots().length ? shots()[0].id : null;
+    render();
+    status(back ? '已撤销。' : '已重做。');
+  }
+
+  /* 分割：播放头落在条目内部时切成两段；字幕条目按文字所在位置切开逐字时间。 */
+  function splitItem() {
+    const found = selectedItem(), t = timeline();
+    if (!found || !t) return;
+    if (found.track.locked) { status(LOCKED); return; }
+    const at = snapUs(preview.time * US), span = spanOf(found.item, found.kind);
+    if (at <= span.start || at >= span.end) { status('把播放头放到条目中间再分割。'); return; }
+    editLane('已在播放头处分割。', () => {
+      const {item, track, kind} = found;
+      const tail = {id: newTimelineId('n'), start_us: at, end_us: span.end};
+      if (kind === 'subtitle') {
+        // 逐段时间按播放头分到前后两段：整段在切点之前的留在前半，其余归后半并把起点提到切点
+        tail.text = item.text;
+        tail.words = item.words.filter(word => word.end_us > at)
+          .map(word => ({...word, start_us: Math.max(word.start_us, at)}));
+        item.words = item.words.filter(word => word.end_us <= at);
+      } else {
+        tail.in_us = item.in_us + (at - item.start_us);
+        tail.out_us = item.out_us;
+        tail.source = item.source;
+        if ('audio' in item) tail.audio = item.audio;
+        item.out_us = tail.in_us;
+      }
+      item.end_us = at;
+      track.cues ? track.cues.push(tail) : track.clips.push(tail);
+      track.cues ? track.cues.sort((a, b) => a.start_us - b.start_us) : track.clips.sort((a, b) => a.start_us - b.start_us);
+      state.timelineSel = {track: track.id, id: tail.id};
+    });
+  }
+
+  /* 方向键：按住 Shift 走 1 秒，否则 0.1 秒，与主轨的时长微调同一手感。 */
+  function nudgeLane(direction, coarse) {
+    const found = selectedItem();
+    if (!found) return;
+    if (found.track.locked) { status(LOCKED); return; }
+    const step = (coarse ? 1 : 0.1) * US;
+    const span = spanOf(found.item, found.kind), bounds = neighbours(found.items, found.kind, found.item);
+    const length = span.end - span.start;
+    const start = Math.min(bounds.max - length, Math.max(bounds.min, span.start + direction * step));
+    if (start === span.start) return;
+    editLane('已移到 ' + round(start / US) + ' 秒。', () => {
+      if (found.kind === 'subtitle') moveCue(found.item, start, start + length);
+      else found.item.start_us = start;
+    });
+  }
+
+  function deleteItem() {
+    const marker = selectedMarker();
+    if (marker) {
+      if (markersLocked()) { status(LOCKED); return; }
+      editLane('已删除标记。', () => {
+        timeline().markers.splice(timeline().markers.indexOf(marker), 1);
+        state.timelineSel = null;
+      });
+      return;
+    }
+    const found = selectedItem();
+    if (!found) return;
+    if (found.track.locked) { status(LOCKED); return; }
+    editLane('已删除。', () => {
+      const list = found.kind === 'subtitle' ? found.track.cues : found.track.clips;
+      list.splice(list.indexOf(found.item), 1);
+      state.timelineSel = null;
+    });
+  }
+
+  /* 拖动：按在右缘手柄上裁尾，按在条目本身上整体移动。 */
+  /* 轨道抬头按钮的点击：按所在轨道找到对象再处理，节点复用后也不会拿到旧对象。 */
+  function setupLaneHeads() {
+    $('lanes').addEventListener('click', event => {
+      const button = event.target.closest('.lane-head button[data-act]');
+      const lane = button && button.closest('.lane'), t = timeline();
+      if (!lane || !t) return;
+      const kind = lane.dataset.kind;
+      const track = (kind === 'subtitle' ? t.subtitles : kind === 'audio' ? t.audio : t.video).find(item => item.id === lane.dataset.id);
+      if (!track || !state.editing) return;
+      const act = button.dataset.act, label = laneLabel(kind, track);
+      if (act === 'more') openTrackActions(button, kind, track, label);
+      else if (act === 'locked') toggleLock(track, label);
+      else { track[act] = !track[act]; changed(); }
+    });
+  }
+
+  function setupLaneDrag() {
+    setupLaneHeads();
+    const lanes = $('lanes');
+    let drag = null;
+    lanes.addEventListener('pointerdown', event => {
+      const node = event.target.closest('.media-clip, .cue');
+      if (!state.editing || !node || event.button !== 0) return;
+      const found = findTrack(node.dataset.track);
+      const item = found && found.items.find(entry => entry.id === node.dataset.id);
+      if (!item) return;
+      laneSelect(node);
+      if (found.track.locked) return;
+      const span = spanOf(item, found.kind);
+      drag = {node, item, kind: found.kind, track: found.track, x: event.clientX, pps: layout.pps,
+        edge: event.target.dataset.handle || null, span, bounds: neighbours(found.items, found.kind, item),
+        inUs: item.in_us, words: item.words ? item.words.slice() : null,
+        targets: snapTargets(new Set([item])), moved: false, before: JSON.stringify(state.working)};
+      node.setPointerCapture(event.pointerId);
+      node.focus();
+      event.preventDefault();
+    });
+    lanes.addEventListener('pointermove', event => {
+      if (!drag) return;
+      const raw = (event.clientX - drag.x) / drag.pps * US;
+      if (!drag.moved && Math.abs(event.clientX - drag.x) < 2) return;
+      drag.moved = true;
+      $('timeline').classList.add('is-dragging');
+      drag.node.classList.add('is-dragging');
+      const {span, bounds, item, kind} = drag, length = span.end - span.start, MIN = 100000;
+      if (drag.edge === 'end') {
+        const end = Math.min(bounds.max, Math.max(span.start + MIN, settle(span.end + raw, [0], drag.targets, drag.pps)));
+        if (kind === 'subtitle') { item.end_us = end; item.words = drag.words.filter(word => word.end_us <= end); }
+        else item.out_us = item.in_us + (end - item.start_us);
+      } else if (drag.edge === 'start') {
+        // 片段的开头不能早于素材开头（入点不小于 0）
+        const floor = kind === 'subtitle' ? bounds.min : Math.max(bounds.min, span.start - drag.inUs);
+        const start = Math.max(floor, Math.min(span.end - MIN, settle(span.start + raw, [0], drag.targets, drag.pps)));
+        if (kind === 'subtitle') { item.start_us = start; item.words = drag.words.filter(word => word.start_us >= start); }
+        else { item.in_us = drag.inUs + (start - span.start); item.start_us = start; }
+      } else {
+        const start = Math.min(bounds.max - length, Math.max(bounds.min, settle(span.start + raw, [0, length], drag.targets, drag.pps)));
+        if (kind === 'subtitle') moveCue(item, start, start + length);
+        else item.start_us = start;
+      }
+      // 拖到原有时长之外时，时间线要跟着变长，否则条目会跑到滚动区外面、再也点不到
+      layoutTimeline(drag.pps);
+    });
+    const finish = commit => {
+      if (!drag) return;
+      const {moved, node, before, item, edge, kind} = drag;
+      drag = null;
+      showSnap(null);
+      $('timeline').classList.remove('is-dragging');
+      node.classList.remove('is-dragging');
+      if (!moved) return;
+      if (!commit) { state.working = JSON.parse(before); changed(); return; }
+      // 拖动过程中已经把位置写进文档，撤销栈记拖动前的快照
+      remember(before);
+      changed();
+      syncDetail(true);
+      const now = spanOf(item, kind);
+      status(edge
+        ? '已调整长度到 ' + round((now.end - now.start) / US) + ' 秒。'
+        : '已移动到 ' + round(now.start / US) + ' 秒。');
+    };
+    // 在窗口或泳道外松开鼠标也要收尾，否则拖动状态会挂住、之后的光标移动还会继续挪条目
+    window.addEventListener('pointerup', () => finish(true));
+    window.addEventListener('pointercancel', () => finish(false));
+    window.addEventListener('blur', () => finish(false));
+    $('view-timeline').addEventListener('keydown', event => {
+      if (event.key === 'Escape' && drag) { finish(false); }
+    });
   }
 
   /* 以屏幕横坐标 clientX 处的时间点为锚缩放：缩放后该时间点仍停在原来的位置。 */
@@ -566,27 +1430,51 @@
     const fit = fitPps();
     if (!fit || !layout.pps) return;
     const scroller = $('timeline-scroll'), timeline = $('timeline');
-    const time = (clientX - timeline.getBoundingClientRect().left) / layout.pps;
+    const time = (clientX - timeline.getBoundingClientRect().left - layout.gutter) / layout.pps;
     const next = Math.min(Math.max(pps, fit), Math.max(MAX_PPS, fit));
     zoom.pps = next <= fit * 1.001 ? null : next;
     layoutTimeline(currentPps());
-    scroller.scrollLeft += timeline.getBoundingClientRect().left + time * layout.pps - clientX;
+    scroller.scrollLeft += timeline.getBoundingClientRect().left + layout.gutter + time * layout.pps - clientX;
   }
 
   /* 按钮与快捷键缩放以播放头为锚；播放头不在可见区时以可见区中央为锚。 */
   function zoomAnchor() {
     const rect = $('timeline-scroll').getBoundingClientRect();
-    const x = $('timeline').getBoundingClientRect().left + Math.min(preview.time, plan().total) * layout.pps;
+    const x = $('timeline').getBoundingClientRect().left + trackX(Math.min(preview.time, span()));
     return x >= rect.left && x <= rect.right ? x : rect.left + rect.width / 2;
   }
   const zoomBy = factor => setZoom(currentPps() * factor, zoomAnchor());
   const zoomFit = () => setZoom(0, zoomAnchor());
 
-  /* 导航条代替原生滚动条：滑块的位置与宽度对应可见区在整条时间线中的位置与比例。 */
+  /* 导航条代替原生滚动条：滑块的位置与长度对应可见区在整条时间线中的位置与比例；底部横向、右侧纵向。 */
   function updateNav() {
-    const scroller = $('timeline-scroll'), width = scroller.scrollWidth || 1, thumb = $('timeline-nav-thumb');
+    const scroller = $('timeline-scroll'), width = scroller.scrollWidth || 1, height = scroller.scrollHeight || 1;
+    const thumb = $('timeline-nav-thumb'), vthumb = $('timeline-vnav-thumb');
     thumb.style.left = scroller.scrollLeft / width * 100 + '%';
     thumb.style.width = Math.min(1, scroller.clientWidth / width) * 100 + '%';
+    // 轨道放得下时没有可滚的余量，竖向导航条整列收起
+    $('timeline-frame').classList.toggle('is-flat', height <= scroller.clientHeight + 1);
+    vthumb.style.top = scroller.scrollTop / height * 100 + '%';
+    vthumb.style.height = Math.min(1, scroller.clientHeight / height) * 100 + '%';
+  }
+
+  /* 拖动滑块平移；点击空白处先把可见区中心移到点击位置，再接着拖。 */
+  function setupNav(nav, horizontal) {
+    const scroller = $('timeline-scroll');
+    const key = horizontal ? 'scrollLeft' : 'scrollTop', axis = horizontal ? 'clientX' : 'clientY';
+    nav.addEventListener('pointerdown', event => {
+      if (event.button !== 0) return;
+      const rect = nav.getBoundingClientRect();
+      const ratio = horizontal ? scroller.scrollWidth / rect.width : scroller.scrollHeight / rect.height;
+      if (event.target === nav) {
+        scroller[key] = (event[axis] - (horizontal ? rect.left : rect.top)) * ratio
+          - (horizontal ? scroller.clientWidth : scroller.clientHeight) / 2;
+      }
+      const start = event[axis], from = scroller[key];
+      nav.classList.add('is-dragging');
+      followPointer(nav, event, move => { scroller[key] = from + (move[axis] - start) * ratio; },
+        () => nav.classList.remove('is-dragging'));
+    });
   }
 
   /* 按住拖动：指针捕获到 node 上，松开或取消时结束。 */
@@ -612,10 +1500,17 @@
   function applyLayout() {
     if (prefs.panelH) $('view-timeline').style.setProperty('--panel-h', prefs.panelH + 'px');
     if (prefs.asideW) document.querySelector('.workspace').style.setProperty('--aside-w', prefs.asideW + 'px');
+    if (prefs.gutterW) $('timeline-frame').style.setProperty('--gutter', prefs.gutterW + 'px');
   }
   function setPanelHeight(height) {
     prefs.panelH = Math.round(Math.max(PANEL_MIN, Math.min(height, $('view-timeline').clientHeight - MONITOR_MIN)));
     applyLayout();
+  }
+  const GUTTER_MIN = 100, GUTTER_MAX = 320;
+  function setGutterWidth(width) {
+    prefs.gutterW = Math.round(Math.max(GUTTER_MIN, Math.min(width, GUTTER_MAX)));
+    applyLayout();
+    layoutTimeline(currentPps());
   }
   function setAsideWidth(width) {
     prefs.asideW = Math.round(Math.max(ASIDE_MIN, Math.min(width, document.querySelector('.workspace').clientWidth - VIEW_MIN)));
@@ -623,13 +1518,14 @@
   }
 
   /* 分隔条按住拖动或用方向键调整；指针朝 axis 正方向移动时尺寸减小（面板在下方、详情栏在右侧）。 */
-  function setupSplitter(splitter, current, resize, axis, keys) {
+  /* dir：指针沿坐标轴正向移动时尺寸的变化方向；监视器与详情栏的分隔条在被调整区域的起始边，取 -1。 */
+  function setupSplitter(splitter, current, resize, axis, keys, dir = -1) {
     splitter.addEventListener('pointerdown', event => {
       if (event.button !== 0) return;
       event.preventDefault();
       const start = event[axis], from = current();
       splitter.classList.add('is-dragging');
-      followPointer(splitter, event, move => resize(from - (move[axis] - start)),
+      followPointer(splitter, event, move => resize(from + dir * (move[axis] - start)),
         () => { splitter.classList.remove('is-dragging'); savePrefs(); });
     });
     splitter.addEventListener('keydown', event => {
@@ -644,10 +1540,12 @@
   function setupTimelineView() {
     const scroller = $('timeline-scroll'), nav = $('timeline-nav'), splitter = $('splitter');
     const panel = document.querySelector('.timeline-panel');
-    // 滚轮横向滚动；Ctrl 或 Alt+滚轮（含触控板捏合）以指针位置为锚缩放
+    // 滚轮横向滚动，Shift+滚轮纵向滚动；Ctrl 或 Alt+滚轮（含触控板捏合）以指针位置为锚缩放。
+    // Windows 上 Chromium 会把 Shift+滚轮的量放进 deltaX，所以两个分量都要看
     scroller.addEventListener('wheel', event => {
       event.preventDefault();
       if (event.ctrlKey || event.altKey) setZoom(currentPps() * Math.exp(-event.deltaY * 0.002), event.clientX);
+      else if (event.shiftKey) scroller.scrollTop += event.deltaY || event.deltaX;
       else scroller.scrollLeft += event.deltaX + event.deltaY;
     }, {passive: false});
     scroller.addEventListener('scroll', updateNav);
@@ -655,19 +1553,14 @@
     $('zoom-in').addEventListener('click', () => zoomBy(1.5));
     $('zoom-out').addEventListener('click', () => zoomBy(1 / 1.5));
     $('zoom-fit').addEventListener('click', zoomFit);
+    $('track-add').addEventListener('click', event => openTrackMenu(event.currentTarget));
 
-    nav.addEventListener('pointerdown', event => {
-      if (event.button !== 0) return;
-      const rect = nav.getBoundingClientRect(), ratio = scroller.scrollWidth / rect.width;
-      if (event.target === nav) scroller.scrollLeft = (event.clientX - rect.left) * ratio - scroller.clientWidth / 2;
-      const x = event.clientX, from = scroller.scrollLeft;
-      nav.classList.add('is-dragging');
-      followPointer(nav, event, move => { scroller.scrollLeft = from + (move.clientX - x) * ratio; },
-        () => nav.classList.remove('is-dragging'));
-    });
+    setupNav(nav, true);
+    setupNav($('timeline-vnav'), false);
 
     applyLayout();
     setupSplitter(splitter, () => panel.offsetHeight, setPanelHeight, 'clientY', {ArrowUp: 16, ArrowDown: -16});
+    setupSplitter($('gutter-splitter'), () => layout.gutter, setGutterWidth, 'clientX', {ArrowLeft: -16, ArrowRight: 16}, 1);
     setupSplitter($('aside-splitter'), () => $('detail').offsetWidth, setAsideWidth, 'clientX', {ArrowLeft: 16, ArrowRight: -16});
   }
 
@@ -717,11 +1610,17 @@
     const view = $('view-timeline');
     view.addEventListener('pointerdown', event => {
       const node = event.target.closest('.clip');
-      if (!state.editing || !node || event.button !== 0) return;
-      const shot = shotById(node.dataset.id);
+      if (!state.editing || !node || event.button !== 0 || mainLocked()) return;
+      const shot = shotById(node.dataset.id), {placed} = plan(), index = placed.findIndex(item => item.shot === shot);
+      const resize = event.target.dataset.edge || null;
+      const before = placed[index - 1] || null, cutAt = index >= 0 ? Math.round(placed[index].start * US) : 0;
+      // 吸附只贴不会跟着动的东西：本镜之后的切点（以及联动时其后的条目）都会移动，不作为目标
+      const fixedEnd = resize === 'start' ? cutAt : cutAt + Math.round(seconds(shot) * US);
       dragging = {node, shot, x: event.clientX, y: event.clientY, moved: false, target: null,
-        resize: event.target.classList.contains('clip-handle'), pending: node.parentElement.id === 'pending-list',
-        length: seconds(shot), original: shot.duration_seconds, pps: layout.pps};
+        resize, pending: node.parentElement.id === 'pending-list', prev: before && before.shot,
+        prevLength: before ? before.length : 0, cutAt, length: seconds(shot), original: shot.duration_seconds, pps: layout.pps,
+        undo: JSON.stringify(state.working), link: resize ? linkSnapshot() : null,
+        targets: resize ? snapTargets(new Set()).filter(time => time < fixedEnd || !linkOn() && time > fixedEnd) : null};
       node.setPointerCapture(event.pointerId);
       if (dragging.resize) event.preventDefault();
     });
@@ -732,8 +1631,8 @@
       dragging.moved = true;
       $('timeline').classList.add('is-dragging');
       if (dragging.resize) {
-        const length = snap(dragging.length + dx / dragging.pps);
-        if (length !== seconds(dragging.shot)) { dragging.shot.duration_seconds = String(length); layoutTimeline(dragging.pps); }
+        resizeShot(dragging, dx, event.altKey);
+        layoutTimeline(dragging.pps);
         return;
       }
       dragging.node.classList.add('is-dragging');
@@ -744,8 +1643,9 @@
     });
     const finish = commit => {
       if (!dragging) return;
-      const {node, shot, moved, resize, pending, target, length, original} = dragging;
+      const {node, shot, moved, resize, pending, target, undo} = dragging;
       dragging = null;
+      showSnap(null);
       $('drop-mark').hidden = true;
       $('timeline').classList.remove('is-dragging');
       node.classList.remove('is-dragging');
@@ -754,15 +1654,17 @@
       suppressClick = true;
       setTimeout(() => { suppressClick = false; });
       if (resize) {
-        if (commit && seconds(shot) !== length) { commitTimeline(shot.id, false); return; }
-        shot.duration_seconds = original;
-        renderTimeline();
+        if (commit && JSON.stringify(state.working) !== undo) { remember(undo); commitTimeline(shot.id, false); return; }
+        state.working = JSON.parse(undo);
+        changed();
         return;
       }
       if (!commit || !target) return;
+      const link = pending ? linkSnapshot() : null;
       if (pending) shot.duration_seconds = String(PLACE_SECONDS);
       const reordered = moveShot(shot.id, target.beforeId);
-      if (pending || reordered) commitTimeline(shot.id, reordered);
+      if (pending) applyLink(link);
+      if (pending || reordered) { remember(undo); commitTimeline(shot.id, reordered); }
     };
     view.addEventListener('pointerup', () => finish(true));
     view.addEventListener('pointercancel', () => finish(false));
@@ -771,16 +1673,42 @@
     });
   }
 
+  /* 拖镜头边缘。右缘：改本镜时长，后面的镜头顺移。左缘：默认移动与上一镜的切点（两镜此消彼长，总长不变）；
+     按住 Alt 或第一镜时只改本镜时长。每次都从拖动开始时的状态重算，中途松开或按下 Alt 都不会累积误差。 */
+  function resizeShot(drag, dx, alone) {
+    const {shot, prev, cutAt, pps} = drag, MIN = 0.1;
+    shot.duration_seconds = String(drag.length);
+    if (prev) prev.duration_seconds = String(drag.prevLength);
+    const raw = dx / pps * US;
+    if (drag.resize === 'start' && prev && !alone) {
+      const cut = settle(cutAt + raw, [0], drag.targets, pps) / US;
+      const from = cutAt / US - drag.prevLength, to = cutAt / US + drag.length;
+      const at = Math.min(to - MIN, Math.max(from + MIN, Math.round(cut * 10) / 10));
+      prev.duration_seconds = String(snap(at - from));
+      shot.duration_seconds = String(snap(to - at));
+      applyLink(drag.link, true);   // 移动切点不改总长，其他轨道留在原处（从“只改本镜”切回来时也放回去）
+      return;
+    }
+    const end = drag.resize === 'start' ? cutAt + Math.round(drag.length * US) - raw
+      : settle(cutAt + Math.round(drag.length * US) + raw, [0], drag.targets, pps);
+    shot.duration_seconds = String(snap((end - cutAt) / US));
+    applyLink(drag.link);
+  }
+
   /* 键盘替代拖动：Alt+←/→ 与相邻片段交换顺序，Shift+←/→ 时长 ±0.1 秒。 */
   function nudgeClip(event) {
     const node = event.target;
     if (!state.editing || node.parentElement.id !== 'track') return false;
+    if (mainLocked() && (event.altKey || event.shiftKey) && {ArrowLeft: 1, ArrowRight: 1}[event.key]) { status(LOCKED); return true; }
     const step = {ArrowLeft: -1, ArrowRight: 1}[event.key];
     if (!step || event.altKey === event.shiftKey) return false;
     const shot = shotById(node.dataset.id), placed = plan().placed.map(item => item.shot.id);
     const index = placed.indexOf(shot.id);
     if (event.shiftKey) {
+      const link = linkSnapshot();
+      remember(JSON.stringify(state.working));
       shot.duration_seconds = String(snap(seconds(shot) + step * 0.1));
+      applyLink(link);
       commitTimeline(shot.id, false);
     } else if (placed[index + step] !== undefined) {
       moveShot(shot.id, step < 0 ? placed[index - 1] : placed[index + 2] || null);
@@ -814,6 +1742,137 @@
     return img.complete && img.naturalWidth ? img : null;
   }
 
+  /* ---------- 媒体池：每个素材一个 <video>，叠在监视器画布上；播放位置以时钟为准，媒体跟随 ----------
+     原生环境由宿主把素材所在文件夹映射为只读主机（resolveMedia），页面只拿到地址；预览环境读 preview-assets。 */
+  const SYNC_TOLERANCE = 0.15;   // 播放中媒体与时钟相差超过这么多秒才重新定位，避免频繁跳帧
+  const media = {urls: new Map(), elements: new Map(), pending: new Set(), picking: null, request: 0, live: false};
+
+  function mediaUrl(source) {
+    if (!host) return 'preview-assets/' + encodeURIComponent(baseName(source));
+    return media.urls.get(source);   // undefined：尚未解析；''：文件不存在或格式不支持
+  }
+
+  function mediaElement(source) {
+    const url = mediaUrl(source);
+    if (!url) return null;
+    let node = media.elements.get(source);
+    if (!node) {
+      node = el('video', {class: 'monitor-video', preload: 'auto', playsinline: true, hidden: true, 'aria-hidden': 'true'});
+      node.addEventListener('loadedmetadata', refreshMedia);
+      node.addEventListener('error', refreshMedia);
+      node.src = url;
+      media.elements.set(source, node);
+      $('monitor-media').append(node);
+    }
+    return node;
+  }
+
+  /* 素材问题的说明；没有问题或尚在解析时返回 null。 */
+  function mediaProblem(source) {
+    const url = mediaUrl(source);
+    if (url === '') return '找不到文件或格式不支持：' + source;
+    const node = url ? mediaElement(source) : null;
+    return node && node.error ? '无法解码这个视频：' + source : null;
+  }
+
+  const mediaDuration = source => {
+    const node = mediaElement(source);
+    return node && node.readyState >= 1 && Number.isFinite(node.duration) ? node.duration : null;
+  };
+
+  function whenMetadata(source) {
+    return new Promise(resolve => {
+      const node = mediaElement(source);
+      if (!node || node.error) { resolve(null); return; }
+      if (node.readyState >= 1) { resolve(node.duration); return; }
+      node.addEventListener('loadedmetadata', () => resolve(node.duration), {once: true});
+      node.addEventListener('error', () => resolve(null), {once: true});
+    });
+  }
+
+  function resolveMedia() {
+    if (!host || !media.live || !timeline()) return;   // 宿主收到 ready 之前会丢弃其他消息
+    const sources = [...new Set([...timeline().video, ...timeline().audio].flatMap(track =>
+      track.clips.flatMap(clip => [clip.source, ...(clip.takes || []).map(take => take.source)])))]
+      .filter(source => !media.urls.has(source) && !media.pending.has(source));
+    if (!sources.length) return;
+    sources.forEach(source => media.pending.add(source));
+    host.postMessage({type: 'resolveMedia', sources});
+  }
+
+  function onMediaUrls(urls) {
+    for (const [source, url] of Object.entries(urls || {})) { media.urls.set(source, url); media.pending.delete(source); }
+    refreshMedia();
+  }
+
+  /* 素材地址或元数据变化后，原地刷新覆盖条、视频块和监视器。 */
+  function refreshMedia() {
+    for (const node of $('track').querySelectorAll('.clip[data-id]')) {
+      const shot = shotById(node.dataset.id), old = node.querySelector('.clip-video'), next = shot ? videoCover(shot) : null;
+      if (old) old.remove();
+      if (next) node.querySelector('.clip-label').after(next);
+    }
+    const block = $('detail').querySelector('.block-video'), shot = shotById(state.selectedId);
+    if (block && shot && !block.contains(document.activeElement)) block.replaceWith(videoBlock(shot));
+    drawPreview();
+  }
+
+  /* 当前时刻在主轨上应显示的视频：{node, local, clip}；镜头格内视频已结束时为空缺 {gap: true}；没有关联或素材不可用时为 null。 */
+  function activeVideo(item, time) {
+    const clip = item ? mainClip(item.shot) : null;
+    const node = clip && !mediaProblem(clip.source) ? mediaElement(clip.source) : null;
+    if (!node) return null;
+    const offset = time - item.start;
+    return offset >= clipSeconds(clip) ? {gap: true} : {node, clip, local: clip.in_us / US + offset};
+  }
+
+  /* 此刻要出声或出画的全部素材：主轨按镜头格，自由视频轨与音频轨按片段位置。
+     画面只给最上面一条没关画面、此刻有片段的视频轨（主轨最下，自由轨序号越大越靠上）；声音各轨按自己的开关与音量同时播放。 */
+  function activeMedia(main, time) {
+    const t = timeline();
+    if (!t) return [];
+    const list = [], at = time * US;
+    if (main && main.node) list.push({node: main.node, local: main.local, track: t.video[0], audio: main.clip.audio, picture: true});
+    const free = (track, picture) => {
+      const clip = track.clips.find(item => at >= item.start_us && at < item.start_us + item.out_us - item.in_us);
+      const node = clip && !mediaProblem(clip.source) ? mediaElement(clip.source) : null;
+      if (node) list.push({node, local: (clip.in_us + at - clip.start_us) / US, track, audio: clip.audio !== false, picture});
+    };
+    t.video.slice(1).forEach(track => free(track, true));
+    t.audio.forEach(track => free(track, false));
+    const shown = list.filter(entry => entry.picture && !entry.track.hidden).pop();
+    for (const entry of list) {
+      entry.visible = entry === shown;
+      entry.muted = !entry.audio || entry.track.muted;
+    }
+    return list;
+  }
+
+  /* 让素材跟随时钟：暂停时逐帧定位，播放中偏差过大才重新定位；既不出画也不出声的不播放。 */
+  function syncMedia(entries) {
+    const live = new Set(entries.filter(entry => entry.visible || !entry.muted).map(entry => entry.node));
+    for (const node of media.elements.values()) {
+      if (live.has(node)) continue;
+      node.hidden = true;
+      if (!node.paused) node.pause();
+    }
+    for (const entry of entries) {
+      const node = entry.node;
+      if (!live.has(node)) continue;
+      node.hidden = !entry.visible;
+      node.muted = entry.muted;
+      node.volume = entry.track.gain;
+      const drift = Math.abs(node.currentTime - entry.local);
+      if (preview.playing) {
+        if (node.paused || drift > SYNC_TOLERANCE) node.currentTime = entry.local;
+        if (node.paused) node.play().catch(() => {});
+      } else {
+        if (!node.paused) node.pause();
+        if (drift > 0.01) node.currentTime = entry.local;
+      }
+    }
+  }
+
   /* 监视器按画幅取可用区域内最大的等比尺寸，由外层居中。 */
   function sizeMonitor() {
     const stage = $('monitor-stage'), frame = $('monitor-frame'), ratio = aspectRatio();
@@ -823,15 +1882,20 @@
   }
 
   function placePlayhead() {
-    const total = plan().total;
-    $('playhead').hidden = total <= 0;
-    $('playhead').style.left = Math.min(preview.time, total) * layout.pps + 'px';
+    const total = span();
+    // 竖线贯穿全部轨道；三角头画在吸顶的标尺行里，纵向滚动时也看得到
+    for (const node of [$('playhead'), $('playhead-head')]) {
+      node.hidden = total <= 0;
+      node.style.left = trackX(Math.min(preview.time, total)) + 'px';
+    }
   }
 
   /* 播放时播放头走出可见区就翻页，与剪辑软件一致。 */
   function followPlayhead() {
-    const scroller = $('timeline-scroll'), x = Math.min(preview.time, plan().total) * layout.pps;
-    if (x < scroller.scrollLeft || x > scroller.scrollLeft + scroller.clientWidth) scroller.scrollLeft = x - 16;
+    const scroller = $('timeline-scroll'), x = trackX(Math.min(preview.time, span()));
+    if (x < scroller.scrollLeft + layout.gutter || x > scroller.scrollLeft + scroller.clientWidth) {
+      scroller.scrollLeft = x - layout.gutter - 16;
+    }
   }
 
   /* 没有参考画面时画“合成占位”：镜号与提示文字，不冒充画面。 */
@@ -846,21 +1910,35 @@
     ctx.fillText('合成占位 · 暂无参考画面', width / 2, height / 2 + 20 * scale);
   }
 
+  /* 监视器上的字幕叠加：取最上面一条未静音字幕轨里覆盖当前时间的条目；多条同时出现时只显示最上的。 */
+  function showSubtitle(time) {
+    const node = $('monitor-subtitle'), t = timeline();
+    const track = t && t.subtitles.find(item => !item.hidden);
+    const cue = track && track.cues.find(item => time >= item.start_us / US && time < item.end_us / US);
+    node.hidden = !cue;
+    node.textContent = cue ? cue.text : '';
+  }
+
   function drawPreview() {
-    const {placed, total} = plan();
+    const {placed, total: planned} = plan();
+    const total = span();
     const time = Math.min(preview.time, total);
-    const item = placed.find(entry => time < entry.start + entry.length) || placed[placed.length - 1] || null;
+    showSubtitle(time);
+    // 镜头计划结束后（被自由轨素材撑出来的部分）没有镜头，画面留黑，时间码继续走
+    const item = time < planned ? placed.find(entry => time < entry.start + entry.length) || placed[placed.length - 1] || null : null;
     $('timecode').textContent = clock(time);
     $('timecode-total').textContent = clock(total);
     placePlayhead();
     if (preview.playing) followPlayhead();
     $('monitor-shot').textContent = item ? item.shot.number : '';
-    $('monitor-text').textContent = item ? item.shot.content || UNKNOWN : '没有可预览的镜头：先确认时长。';
+    $('monitor-text').textContent = item ? item.shot.content || UNKNOWN
+      : planned > 0 && total > planned ? '镜头之外：只有自由轨素材与字幕。' : '没有可预览的镜头：先确认时长。';
     const id = item ? item.shot.id : null;
-    if (preview.current !== id) {
-      preview.current = id;
-      for (const node of $('track').children) node.classList.toggle('is-current', node.dataset.id === id);
-    }
+    preview.current = id;
+
+    // 关联了视频的镜头直接播放视频（不套预览运镜）；视频已结束的空缺保持黑场。监视器隐藏时也要同步，保证离开视图即停
+    const video = activeVideo(item, time), mainHidden = Boolean(timeline() && timeline().video[0].hidden);
+    syncMedia(activeMedia(video, time));
 
     const frame = $('monitor-frame'), canvas = $('monitor-canvas'), scale = window.devicePixelRatio || 1;
     const width = Math.round(frame.clientWidth * scale), height = Math.round(frame.clientHeight * scale);
@@ -869,7 +1947,8 @@
     const ctx = canvas.getContext('2d'), style = getComputedStyle(frame);
     ctx.fillStyle = style.backgroundColor;
     ctx.fillRect(0, 0, width, height);
-    if (!item) return;
+    if (video) { canvas.setAttribute('aria-label', item.shot.number + (video.gap ? ' 视频空缺' : ' 视频')); return; }
+    if (!item || mainHidden) return;   // 主轨关了画面：镜头的静态预演也不画
     const img = imageFor(item.shot);
     canvas.setAttribute('aria-label', item.shot.number + ' ' + (img ? '参考画面' : '暂无参考画面'));
     if (!img) { placeholder(ctx, item.shot, width, height, style.color, scale); return; }
@@ -886,22 +1965,25 @@
   }
 
   function playButton() {
-    $('play-toggle').replaceChildren(icon(preview.playing ? 'pause' : 'play'), el('span', {text: preview.playing ? '暂停' : '播放'}));
-    $('play-toggle').disabled = plan().total <= 0;
+    // 按钮里固定是图标、文字与右侧的时间码；时间码由 drawPreview 更新，这里只换图标和文字
+    $('play-toggle').querySelector('use').setAttribute('href', preview.playing ? '#i-pause' : '#i-play');
+    $('play-label').textContent = preview.playing ? '暂停' : '播放';
+    $('play-toggle').disabled = span() <= 0;
   }
 
   function setPlaying(on) {
-    const {total} = plan();
+    const total = span();
     if (on && total <= 0) return;
     if (on && preview.time >= total) preview.time = 0;
     preview.playing = on;
     playButton();
     if (on) { preview.last = performance.now(); requestAnimationFrame(tick); }
+    else drawPreview();   // 让视频随之暂停
   }
 
   function tick(now) {
     if (!preview.playing) return;
-    const {total} = plan();
+    const total = span();
     preview.time += (now - preview.last) / 1000;
     preview.last = now;
     if (preview.time >= total) { preview.time = total; setPlaying(false); }
@@ -910,11 +1992,13 @@
   }
 
   function seek(time) {
-    preview.time = Math.min(Math.max(0, time), plan().total);
+    preview.time = Math.min(Math.max(0, time), span());
     drawPreview();
   }
 
-  const seekAt = clientX => { if (layout.pps) seek((clientX - $('timeline').getBoundingClientRect().left) / layout.pps); };
+  const seekAt = clientX => {
+    if (layout.pps) seek((clientX - $('timeline').getBoundingClientRect().left - layout.gutter) / layout.pps);
+  };
 
   function renderMonitor() {
     const value = state.working.layout_aspect || '', trigger = $('aspect-trigger');
@@ -954,7 +2038,8 @@
     // = / - 缩放，\ 适配全部（Premiere 键位）
     document.addEventListener('keydown', event => {
       if (state.view !== 'timeline' || event.ctrlKey || event.altKey || event.metaKey || typing(event.target)) return;
-      const zoomKey = {'=': () => zoomBy(1.5), '+': () => zoomBy(1.5), '-': () => zoomBy(1 / 1.5), '\\': zoomFit}[event.key];
+      const zoomKey = {'=': () => zoomBy(1.5), '+': () => zoomBy(1.5), '-': () => zoomBy(1 / 1.5), '\\': zoomFit,
+        m: addMarker, M: addMarker, s: toggleSnap, S: toggleSnap}[event.key];
       if (zoomKey) { event.preventDefault(); zoomKey(); }
     });
   }
@@ -1054,6 +2139,265 @@
     ]);
   }
 
+  /* ---------- 镜头的视频：关联、替换与声音都在镜头上下文里完成 ----------
+     已关联时只显示一行：缩略图、文件名与声音开关；裁剪与入出点在时间线上做，这里不再重复。
+     只读与编辑共用同一套元素（解锁不改布局）：空状态是一个虚线按钮，次要操作收在标题旁的菜单里。 */
+  function videoBlock(shot) {
+    const clip = mainClip(shot), editing = state.editing && !mainLocked();
+    const title = el('h3', {class: 'block-title'}, [el('span', {text: '视频'})]);
+    const block = el('section', {class: 'block block-video'}, title);
+    if (!clip) {
+      block.append(el('button', {type: 'button', class: 'video-empty', 'aria-disabled': editing ? null : 'true', tabindex: editing ? null : '-1',
+        onclick: () => { if (editing) pickVideo(shot); }}, [icon('film'), el('span', {text: editing ? '关联视频…' : '未关联视频'})]));
+      return block;
+    }
+    const more = el('button', {type: 'button', class: 'btn btn-quiet btn-icon video-more', title: '视频操作', 'aria-haspopup': 'menu',
+      'aria-expanded': 'false', 'aria-disabled': editing ? null : 'true', onclick: event => { if (editing) openVideoMenu(event.currentTarget, shot); }},
+      [icon('more'), el('span', {class: 'visually-hidden', text: '视频操作'})]);
+    title.append(more);
+    const versions = versionsOf(clip);
+    block.append(el('div', {class: 'video-versions' + (versions.length > 1 ? ' is-multi' : ''), role: 'group', 'aria-label': '视频版本'},
+      versions.map(version => versionRow(shot, clip, version, editing))));
+    if (editing) block.append(el('button', {type: 'button', class: 'video-add', onclick: () => pickVideo(shot)}, [icon('plus'), el('span', {text: '添加版本…'})]));
+    return block;
+  }
+
+  /* 一个版本一行：点左边（缩略图与文件名）切换为当前使用；当前版本带声音开关，解锁后每行都可移除。
+     缩略图取入点那一帧；悬停整行时在浮层里静音循环播放这个版本的采用范围。 */
+  function versionRow(shot, clip, version, editing) {
+    const active = version.id === clip.id, problem = mediaProblem(version.source), url = mediaUrl(version.source);
+    const thumb = url ? thumbVideo(url + '#t=' + (version.in_us / US).toFixed(3)) : icon(problem ? 'alert' : 'film');
+    const pick = el('button', {type: 'button', class: 'video-pick', 'aria-pressed': String(active), title: problem || version.source,
+      'aria-disabled': editing && !active ? null : 'true', onclick: () => { if (editing && !active) useVersion(shot, version.id); }},
+      [el('span', {class: 'video-thumb-box'}, thumb), el('span', {class: 'video-name', text: baseName(version.source)})]);
+    const remove = editing ? el('button', {type: 'button', class: 'btn btn-quiet btn-icon video-remove', title: '移除这个版本（文件不受影响）',
+      onclick: () => removeVersion(shot, version.id)}, [icon('trash'), el('span', {class: 'visually-hidden', text: '移除这个版本'})]) : null;
+    return el('div', {class: 'video-file' + (active ? ' is-active' : '') + (problem ? ' is-missing' : ''),
+      'data-peek-video': url ? shot.id + '|' + version.id : null}, [pick, active ? soundButton(clip) : null, remove]);
+  }
+
+  /* 镜头的全部视频版本：当前版本（片段顶层字段）加上 takes，按文件名自然排序（v001、v002…），界面上的序号都按这个顺序。 */
+  const VERSION_FIELDS = ['id', 'source', 'in_us', 'out_us', 'audio'];
+  const versionsOf = clip => [Object.fromEntries(VERSION_FIELDS.map(key => [key, clip[key]])), ...clip.takes]
+    .sort((a, b) => baseName(a.source).localeCompare(baseName(b.source), 'zh', {numeric: true}));
+
+  /* 切换版本：把选中的版本与顶层字段（连同 id）互换，每个版本的 id 始终跟着同一个文件。 */
+  function useVersion(shot, id) {
+    const clip = mainClip(shot), take = clip && clip.takes.find(item => item.id === id);
+    if (!take || mainLocked()) return;
+    editLane(shot.number + ' 改用 ' + baseName(take.source) + '。', () => {
+      for (const key of VERSION_FIELDS) [clip[key], take[key]] = [take[key], clip[key]];
+    });
+    refreshVideoBlock(shot);
+  }
+
+  /* 移除一个版本；移除的是当前版本时，按顺序改用剩下的第一个；最后一个也移除就是取消关联。素材文件不受影响。 */
+  function removeVersion(shot, id) {
+    const clip = mainClip(shot);
+    if (!clip || mainLocked()) return;
+    const name = baseName(versionsOf(clip).find(version => version.id === id).source);
+    editLane(shot.number + ' 已移除版本 ' + name + '；素材文件不受影响。', () => {
+      if (clip.id !== id) { clip.takes.splice(clip.takes.findIndex(take => take.id === id), 1); return; }
+      const next = versionsOf(clip).find(version => version.id !== id);
+      if (!next) { const clips = timeline().video[0].clips; clips.splice(clips.indexOf(clip), 1); return; }
+      clip.takes.splice(clip.takes.indexOf(clip.takes.find(take => take.id === next.id)), 1);
+      for (const key of VERSION_FIELDS) clip[key] = next[key];
+    });
+    refreshVideoBlock(shot);
+  }
+
+  /* 点版本时焦点在详情栏里，syncDetail 不会重画，这里只换掉视频块。 */
+  function refreshVideoBlock(shot) {
+    const old = $('detail').querySelector(':scope > .block-video');
+    if (old && shot.id === state.selectedId) old.replaceWith(videoBlock(shot));
+  }
+
+  /* 详情栏每次重绘都会新建元素；视频缩略图要重新加载、会闪一下，所以按地址缓存同一个 <video> 反复用。 */
+  const thumbVideos = new Map();
+  function thumbVideo(src) {
+    let node = thumbVideos.get(src);
+    if (!node) {
+      node = el('video', {class: 'video-thumb', src, preload: 'metadata', muted: true, playsinline: true, tabindex: '-1', 'aria-hidden': 'true'});
+      thumbVideos.set(src, node);
+    }
+    return node;
+  }
+
+  /* 声音开关：点击时焦点在按钮上，refreshMedia 不会重建视频块，所以按钮自己换成新状态并保留焦点。 */
+  function soundButton(clip) {
+    const editing = state.editing;
+    const button = el('button', {type: 'button', class: 'btn btn-quiet btn-icon', 'aria-pressed': String(clip.audio),
+      title: clip.audio ? '使用视频声音' : '不使用视频声音', 'aria-disabled': editing ? null : 'true', tabindex: editing ? null : '-1',
+      onclick: () => {
+        if (!state.editing) return;
+        clip.audio = !clip.audio;
+        changed(); refreshMedia();
+        const next = soundButton(clip);
+        button.replaceWith(next);
+        next.focus();
+      }},
+      [icon(clip.audio ? 'volume' : 'mute'), el('span', {class: 'visually-hidden', text: '使用视频声音'})]);
+    return button;
+  }
+
+  function openVideoMenu(trigger, shot) {
+    openMenu({trigger, align: 'end', label: '视频操作', restore: () => trigger.focus(), items: videoItems(shot)});
+  }
+
+  /* 视频操作，详情栏的“⋯”与右键镜头共用：有多个版本时先列出版本（当前的打勾），再是添加、对齐时长与移除。 */
+  function videoItems(shot) {
+    const clip = mainClip(shot);
+    if (!state.editing || mainLocked()) return [];
+    const versions = clip ? versionsOf(clip) : [];
+    return [
+      ...(versions.length > 1 ? versions.map((version, index) => ({label: (index + 1) + '/' + versions.length + '  ' + baseName(version.source),
+        checked: version.id === clip.id, icon: icon('film'), pick: () => useVersion(shot, version.id)})) : []),
+      {label: clip ? '添加版本…' : '关联视频…', icon: icon('plus'), pick: () => pickVideo(shot)},
+      clip ? {label: '用视频长度设为镜头时长', icon: icon('film'), pick: () => fitShotToVideo(shot)} : null,
+      clip ? {label: versions.length > 1 ? '移除全部版本' : '移除视频', icon: icon('trash'), pick: () => {
+        editLane(shot.number + ' 已移除视频关联；素材文件不受影响。', () => {
+          const clips = timeline().video[0].clips;
+          clips.splice(clips.indexOf(clip), 1);
+        });
+        renderDetail();
+      }} : null
+    ].filter(Boolean).map(item => Object.assign({checked: false}, item));
+  }
+
+  /* 镜头时长只精确到 0.1 秒：取不超过采用长度的 0.1 秒整，出点随之收齐，镜头格与视频正好等长。 */
+  function fitShotToVideo(shot) {
+    const clip = mainClip(shot), link = linkSnapshot();
+    const length = Math.max(0.1, Math.floor(clipSeconds(clip) * 10 + 1e-6) / 10);
+    shot.duration_seconds = tenth(length);
+    clip.out_us = clip.in_us + Math.round(length * US);
+    applyLink(link);
+    changed(); renderTable(); renderDetail();
+    status(shot.number + ' 的时长已设为 ' + tenth(length) + ' 秒（取视频采用长度的 0.1 秒整）。');
+  }
+
+  /* 用系统对话框选视频；读到素材长度后才关联，入点为 0，出点取素材长度与镜头时长中较短的一个。 */
+  function pickVideo(shot) {
+    if (!host) { status('预览模式：没有连接宿主程序，不能选择文件。'); return; }
+    media.picking = {request: ++media.request, shotId: shot.id};
+    host.postMessage({type: 'pickMedia', kind: 'video', multiple: true, request: media.request});
+  }
+
+  /* 找本轨在 from 之后第一个放得下的位置：与已有片段不重叠即可，不挤走别人。 */
+  function freeStart(track, fromUS, lengthUS) {
+    const spans = (track.cues || track.clips).map(item => spanOf(item, track.cues ? 'subtitle' : 'clip')).sort((a, b) => a.start - b.start);
+    let start = fromUS;
+    for (const span of spans) {
+      if (span.end <= start) continue;
+      if (span.start >= start + lengthUS) break;
+      start = span.end;
+    }
+    return start;
+  }
+
+  async function onMediaPicked(data) {
+    const picking = media.picking;
+    if (!picking || data.request !== picking.request) return;
+    media.picking = null;
+    if (data.status === 'cancelled') return;
+    if (data.status !== 'picked') { status('这个文件不能作为视频使用：只支持 mp4、m4v、mov、webm。'); return; }
+    if (picking.shotId) { addVersions(picking.shotId, data.items || [{source: data.source, url: data.url}]); return; }
+    media.urls.set(data.source, data.url);
+    const duration = await whenMetadata(data.source);
+    if (!state.editing) return;
+    // 插入：没有 shotId，只有目标轨，素材放到播放头之后第一个放得下的空档
+    if (picking.target) {
+      const found = findTrack(picking.target);
+      if (!found || !duration) { status('无法解码这个素材，未插入。'); return; }
+      const length = Math.round(duration * US), isVideo = found.kind === 'video';
+      const start = freeStart(found.track, picking.startUs, length), clipId = newTimelineId('c');
+      editLane('已插入 ' + baseName(data.source) + '：' + round(start / US) + ' 秒起。', () => {
+        found.track.clips.push(isVideo
+          ? {id: clipId, start_us: start, source: data.source, in_us: 0, out_us: length, audio: true}
+          : {id: clipId, start_us: start, source: data.source, in_us: 0, out_us: length});
+        found.track.clips.sort((a, b) => a.start_us - b.start_us);
+        state.timelineSel = {track: found.track.id, id: clipId};
+      });
+      return;
+    }
+  }
+
+  /* 给镜头加视频版本：还没关联时第一个成为当前版本，其余（以及已关联时的全部）进候选，不自动切换。
+     已经在版本里的文件跳过；读不出长度的视频不加。出点取素材长度与镜头时长中较短的一个。 */
+  async function addVersions(shotId, items) {
+    for (const item of items) media.urls.set(item.source, item.url);
+    const durations = await Promise.all(items.map(item => whenMetadata(item.source)));
+    const shot = shotById(shotId);
+    if (!state.editing || !shot) return;
+    let clip = mainClip(shot);
+    const known = new Set(clip ? versionsOf(clip).map(version => version.source) : []);
+    const fresh = items.map((item, index) => ({source: item.source, duration: durations[index]}))
+      .filter(item => item.duration && !known.has(item.source));
+    const skipped = items.length - fresh.length;
+    if (!fresh.length) { status(skipped ? '没有可添加的视频：文件已在版本里，或无法解码。' : '没有选择视频。'); return; }
+    const slot = seconds(shot), firstMedia = !state.working.timeline, linked = Boolean(clip);
+    editLane('', () => {
+      for (const item of fresh) {
+        const version = {id: newTimelineId(clip ? 't' : 'c'), source: item.source, in_us: 0,
+          out_us: Math.round(Math.min(item.duration, slot === null ? item.duration : slot) * US), audio: true};
+        if (clip) clip.takes.push(version);
+        else { clip = Object.assign(version, {shot_id: shot.id, takes: []}); ensureTimeline().video[0].clips.push(clip); }
+      }
+    });
+    renderDetail();
+    status(shot.number + (linked ? ' 已添加 ' + fresh.length + ' 个版本，在右侧点选即可改用。'
+      : ' 已关联视频 ' + baseName(fresh[0].source) + (fresh.length > 1 ? '，另有 ' + (fresh.length - 1) + ' 个版本可选' : ''))
+      + (skipped ? '（跳过 ' + skipped + ' 个已存在或无法解码的文件）' : '')
+      + (firstMedia ? '；保存后文件升级为含时间线的新格式，旧版编辑器将无法打开。' : '。'));
+  }
+
+  /* 导入字幕或歌词：文件由宿主读取解析，页面只拿到条目；不在这里生成文字，也不自动对齐音乐。
+     每次导入建一条新字幕轨，按条目顺序生成 ID，逐字时间原样保留。 */
+  /* 手动新建一条空字幕：放进最上面的字幕轨（没有就先建一条）。播放头在空档里就从播放头起，长 2 秒但不越过下一条；
+     播放头落在已有字幕里时顺延到下一个能放下 2 秒的空档。 */
+  function addCue(target) {
+    if (!state.editing) return;
+    const t = ensureTimeline(), length = 2 * US;
+    if (target && target.locked) { status(LOCKED); return; }
+    editLane('已新建字幕：在右侧填写文字。', () => {
+      let track = target || t.subtitles.find(item => !item.locked);
+      if (!track) { track = {id: newTimelineId('s'), name: '', language: '', hidden: false, locked: false, cues: []}; t.subtitles.push(track); }
+      const at = snapUs(preview.time * US);
+      const inside = track.cues.some(cue => at >= cue.start_us && at < cue.end_us);
+      const start = inside ? freeStart(track, at, length) : at;
+      const next = track.cues.filter(cue => cue.start_us >= start).map(cue => cue.start_us);
+      const end = inside ? start + length : Math.min(start + length, ...next);
+      const cue = {id: newTimelineId('q'), start_us: start, end_us: end, text: '', words: []};
+      track.cues.push(cue);
+      track.cues.sort((a, b) => a.start_us - b.start_us);
+      state.timelineSel = {track: track.id, id: cue.id};
+    });
+    focusDetailText();
+  }
+
+  function pickSubtitle() {
+    if (!state.editing) return;
+    if (!host) { status('预览模式：没有连接宿主程序，不能选择文件。'); return; }
+    media.picking = {request: ++media.request, subtitle: true};
+    host.postMessage({type: 'pickSubtitle', request: media.request});
+  }
+
+  function onSubtitlePicked(data) {
+    const picking = media.picking;
+    if (!picking || !picking.subtitle || data.request !== picking.request) return;
+    media.picking = null;
+    if (data.status === 'cancelled') return;
+    if (data.status !== 'picked') { status(data.message || '这个文件不能作为字幕使用。'); return; }
+    if (!state.editing) return;
+    const firstMedia = !state.working.timeline, t = ensureTimeline();
+    t.subtitles.push({
+      id: newTimelineId('s'), name: '', language: data.language || '', hidden: false, locked: false,
+      cues: data.cues.map(cue => ({id: newTimelineId('q'), start_us: cue.start_us, end_us: cue.end_us, text: cue.text, words: cue.words || []}))
+    });
+    changed(); renderTimeline();
+    status('已导入 ' + (data.name || '字幕') + '：' + data.cues.length + ' 条' +
+      (firstMedia ? '；保存后文件升级为含时间线的新格式，旧版编辑器将无法打开。' : '。'));
+  }
+
   function detailNodes(shot) {
     if (!shot) return [el('h2', {id: 'detail-title', class: 'label', text: '镜头详情'}),
       el('p', {class: 'field-empty', text: '没有可显示的镜头。'})];
@@ -1070,29 +2414,103 @@
       ]),
       textBlock('f-description', '详细描述', shot, 'description', refresh, DESCRIPTION_LIMIT),
       assetsBlock(shot),
+      videoBlock(shot),
       textBlock('f-prompt', '图片生成提示词', shot, 'prompt', refresh),
       textBlock('f-video-prompt', '视频提示词', shot, 'video_prompt', refresh)
     ];
   }
 
   /* 切换镜头时旧内容作为残影淡出、新内容同时淡入；不延迟新内容的出现。 */
-  function renderDetail(crossfade) {
+  /* 详情栏的对象：选中标记或字幕条目时显示它们，否则显示当前镜头。key 用来判断是否需要换内容。 */
+  function detailSubject() {
+    const marker = selectedMarker();
+    if (marker) return {key: 'marker:' + marker.id, marker};
+    const found = selectedItem();
+    if (found && found.kind === 'subtitle') return {key: 'cue:' + found.item.id, cue: found.item, track: found.track};
+    return {key: 'shot:' + state.selectedId};
+  }
+
+  function subjectNodes(subject) {
+    if (subject.marker) return markerDetail(subject.marker);
+    if (subject.cue) return cueDetail(subject.cue, subject.track);
+    return detailNodes(shotById(state.selectedId));
+  }
+
+  /* 对象变了就换内容；refresh 时对象没变也重画（时间改了），但焦点在详情栏里时不打断输入。 */
+  function syncDetail(refresh) {
     const detail = $('detail');
+    if (detailSubject().key !== detail.dataset.subject) renderDetail(true);
+    else if (refresh && !detail.contains(document.activeElement)) renderDetail();
+  }
+
+  const rangeText = (start, end) => end === null ? round(start / US) + ' 秒' : round(start / US) + '–' + round(end / US) + ' 秒';
+
+  /* 字幕与标记的文字框：只读与编辑共用；获得焦点时拍快照，失焦时若有改动就压进撤销栈。 */
+  function textField(id, title, value, onInput, locked) {
+    let before = null;
+    const editable = state.editing && !locked;
+    const input = el('textarea', {id, class: 'cell-input detail-text', 'aria-labelledby': id + '-title', spellcheck: 'false',
+      readonly: !editable, tabindex: editable ? null : '-1',
+      onfocus: () => { before = JSON.stringify(state.working); },
+      oninput: () => { onInput(input.value); changed(); },
+      onchange: () => {
+        if (!before) return;
+        history.past.push(before);
+        if (history.past.length > UNDO_LIMIT) history.past.shift();
+        history.future.length = 0;
+        before = JSON.stringify(state.working);
+      }});
+    input.value = value;
+    return el('section', {class: 'block'}, [el('h3', {class: 'block-title', id: id + '-title'}, el('span', {text: title})), input]);
+  }
+
+  function focusDetailText() {
+    // 切换时旧内容还在淡出残影里，只找正式内容里的输入框
+    const input = $('detail').querySelector(':scope > .block > .detail-text');
+    if (input && state.editing) input.focus();
+  }
+
+  function cueDetail(cue, track) {
+    const code = 'S' + (timeline().subtitles.indexOf(track) + 1);
+    return [
+      el('header', {class: 'detail-head'}, [
+        el('p', {class: 'label', text: '字幕 · ' + code}),
+        el('h2', {class: 'detail-id', id: 'detail-title', text: rangeText(cue.start_us, cue.end_us)})
+      ]),
+      textField('f-cue', '文字', cue.text, value => { cue.text = value; }, track.locked),
+      cue.words.length ? el('p', {class: 'detail-note', text: '含逐字时间 ' + cue.words.length + ' 段；改动文字不会改逐字时间。'}) : null
+    ];
+  }
+
+  function markerDetail(marker) {
+    return [
+      el('header', {class: 'detail-head'}, [
+        el('p', {class: 'label', text: (marker.end_us === null ? '标记' : '范围标记') + ' · ' + (marker.author === 'agent' ? 'Agent' : '用户')}),
+        el('h2', {class: 'detail-id', id: 'detail-title', text: rangeText(marker.start_us, marker.end_us)})
+      ]),
+      textField('f-marker', '说明', marker.text, value => { marker.text = value; }, markersLocked())
+    ];
+  }
+
+  function renderDetail(crossfade) {
+    const detail = $('detail'), subject = detailSubject();
+    detail.dataset.subject = subject.key;
     const old = [...detail.children].filter(node => !node.classList.contains('detail-ghost'));
     if (crossfade && old.length && !reducedMotion()) {
       detail.scrollTop = 0;
       const ghost = el('div', {class: 'detail-ghost', 'aria-hidden': 'true', inert: true}, old);
       ghost.addEventListener('animationend', () => ghost.remove(), {once: true});
       detail.querySelectorAll('.detail-ghost').forEach(node => node.remove());
-      detail.replaceChildren(ghost, ...detailNodes(shotById(state.selectedId)));
+      detail.replaceChildren(ghost, ...subjectNodes(subject));
       detail.classList.remove('entering'); void detail.offsetWidth; detail.classList.add('entering');
       return;
     }
-    detail.replaceChildren(...detailNodes(shotById(state.selectedId)));
+    detail.replaceChildren(...subjectNodes(subject));
   }
 
   function render() {
     renderChrome(); renderTable(); renderTimeline(); renderDetail();
+    resolveMedia();
   }
 
   /* ---------- 选择与视图 ---------- */
@@ -1103,8 +2521,9 @@
 
   /* 只更新已有节点的选中标记，避免重建时丢失焦点。 */
   function markSelection() {
-    for (const node of document.querySelectorAll('[data-id]')) {
-      const selected = node.dataset.id === state.selectedId;
+    // 只管表格行与镜头片段；选中了泳道条目或标记时，时间线上的镜头让出高亮，避免两处同时亮着
+    for (const node of document.querySelectorAll('tr[data-id], .clip[data-id]')) {
+      const selected = node.dataset.id === state.selectedId && (node.tagName === 'TR' || !state.timelineSel);
       if (node.tagName === 'TR') {
         node.setAttribute('aria-selected', String(selected));
         const number = node.querySelector('.cell-number');
@@ -1117,9 +2536,12 @@
   }
 
   function select(id, focus) {
-    if (!shotById(id) || id === state.selectedId && !focus) return;
-    const changedShot = id !== state.selectedId;
+    const fromLane = Boolean(state.timelineSel);
+    if (!shotById(id) || id === state.selectedId && !focus && !fromLane) return;
+    const changedShot = id !== state.selectedId || fromLane;
     state.selectedId = id;
+    state.timelineSel = null;
+    markLaneSelection();
     markSelection();
     if (changedShot) renderDetail(true);
     const node = selectedNode();
@@ -1145,7 +2567,8 @@
       $('view-' + name).hidden = !active;
     }
     if (focusTab) $('tab-' + view).focus();
-    if (view === 'timeline') renderMonitor(); else { setPlaying(false); showHelp(false); }
+    // 隐藏时量不到宽度，切回来按真实宽度重排一次
+    if (view === 'timeline') { layoutTimeline(currentPps()); renderMonitor(); } else { setPlaying(false); showHelp(false); }
     const node = selectedNode();
     if (node) node.scrollIntoView({block: 'nearest', inline: 'nearest'});
   }
@@ -1174,7 +2597,7 @@
     menu.replaceChildren(...items.map(item => el('button', {
       type: 'button', role: 'menuitemradio', class: 'menu-item', tabindex: '-1',
       'aria-checked': String(item.checked), onclick: () => { closeMenu(false); item.pick(); }
-    }, [item.icon, el('span', {text: item.label})])));
+    }, [item.icon, el('span', {text: item.label}), item.hint ? el('kbd', {text: item.hint}) : null])));
     menu.hidden = false;
     if (trigger) trigger.setAttribute('aria-expanded', 'true');
     place(menu, anchor || trigger, align);
@@ -1193,6 +2616,42 @@
           if (next) { next.focus(); pulse(next, 'just-set'); }
         }
       }))});
+  }
+
+  /* 添加轨道与素材：新轨道、导入字幕，或把视频/音频放到播放头处。 */
+  function openTrackMenu(trigger) {
+    openMenu({trigger, align: 'start', label: '添加轨道', restore: () => trigger.focus(), items: [
+      {label: '视频轨', icon: icon('film'), pick: () => addTrack('video')},
+      {label: '音频轨', icon: icon('volume'), pick: () => addTrack('audio')},
+      {label: '在播放头新建字幕', icon: icon('text'), pick: addCue},
+      {label: '导入字幕…', icon: icon('text'), pick: pickSubtitle},
+      {label: '在播放头插入视频…', icon: icon('film'), pick: () => insertMedia('video')},
+      {label: '在播放头插入音频…', icon: icon('volume'), pick: () => insertMedia('audio')}
+    ]});
+  }
+
+  /* 把素材放到播放头：没有对应自由轨就先建一条；播放头位置放不下时顺延到本轨下一个空档。 */
+  function insertMedia(kind, target) {
+    if (!state.editing) return;
+    if (!host) { status('预览模式：没有连接宿主程序，不能选择文件。'); return; }
+    if (target && target.locked) { status(LOCKED); return; }
+    const t = ensureTimeline(), free = () => (kind === 'video' ? t.video.slice(1) : t.audio).find(item => !item.locked);
+    let track = target || free();
+    if (!track) {
+      addTrack(kind);
+      track = free();
+    }
+    media.picking = {request: ++media.request, target: track.id, startUs: snapUs(preview.time * US)};
+    host.postMessage({type: 'pickMedia', kind, request: media.request});
+  }
+
+  function addTrack(kind) {
+    if (!state.editing) return;
+    ensureTimeline()[kind].push(kind === 'video'
+      ? {id: newTimelineId('v'), name: '', muted: false, hidden: false, locked: false, gain: 1, clips: []}
+      : {id: newTimelineId('a'), name: '', muted: false, locked: false, gain: 1, clips: []});
+    changed(); renderTimeline();
+    status('已添加' + (kind === 'video' ? '视频' : '音频') + '轨。');
   }
 
   function setupMenu() {
@@ -1237,19 +2696,34 @@
     layer.dataset.side = side;
   }
 
-  /* ---------- 图片预览：素材引用悬停或聚焦时显示、点击复制；表格缩略图悬停时显示大图 ---------- */
+  /* ---------- 图片预览：素材引用悬停或聚焦时显示、点击复制；表格缩略图悬停时显示大图；视频缩略图悬停时静音循环播放采用范围 ---------- */
   function setupPeek() {
-    const peek = $('asset-peek'), img = $('peek-img');
-    let anchor = null;
+    const peek = $('asset-peek'), img = $('peek-img'), video = $('peek-video');
+    let anchor = null, range = null;
     const assetFor = node => state.working.assets.find(asset => asset.id === node.dataset.asset);
+    const stopVideo = () => {
+      range = null;
+      video.pause(); video.hidden = true;
+      video.removeAttribute('src'); video.load();
+    };
     const show = node => {
-      const shot = node.dataset.peekShot ? shotById(node.dataset.peekShot) : null, asset = shot ? null : assetFor(node);
-      if (!shot && !asset || anchor === node) return;
+      if (anchor === node) return;
+      const [shotId, versionId] = (node.dataset.peekVideo || '').split('|'), clipShot = shotId ? shotById(shotId) : null;
+      const main = clipShot && mainClip(clipShot), clip = main ? versionsOf(main).find(version => version.id === versionId) || null : null;
+      const shot = clip ? clipShot : node.dataset.peekShot ? shotById(node.dataset.peekShot) : null, asset = shot ? null : assetFor(node);
+      if (!shot && !asset) return;
       anchor = node;
-      img.hidden = false;
-      img.src = thumbUrl(shot ? shot.thumbnail : asset.path) || '';
+      stopVideo();
+      img.hidden = Boolean(clip);
+      if (clip) {
+        range = {from: clip.in_us / US, to: clip.out_us / US};
+        video.hidden = false;
+        video.src = mediaUrl(clip.source);
+        video.currentTime = range.from;
+        video.play().catch(() => {});
+      } else img.src = thumbUrl(shot ? shot.thumbnail : asset.path) || '';
       $('peek-id').textContent = shot ? shot.number : asset.id;
-      $('peek-label').textContent = shot ? shot.content : asset.name;
+      $('peek-label').textContent = clip ? baseName(clip.source) : shot ? shot.content : asset.name;
       peek.classList.toggle('peek-large', Boolean(shot));
       peek.hidden = false;
       node.setAttribute('aria-describedby', 'asset-peek');
@@ -1259,11 +2733,17 @@
       if (!anchor) return;
       anchor.removeAttribute('aria-describedby');
       anchor = null; peek.hidden = true;
+      stopVideo();
     };
+    // 只在采用范围内循环：到出点（或文件结尾）就回到入点
+    const loop = () => { if (range) { video.currentTime = range.from; video.play().catch(() => {}); } };
+    video.addEventListener('timeupdate', () => { if (range && video.currentTime >= range.to) loop(); });
+    video.addEventListener('ended', loop);
+    video.addEventListener('loadedmetadata', () => { if (anchor) place(peek, anchor, 'start'); });
     img.addEventListener('error', () => { img.hidden = true; });
     img.addEventListener('load', () => { if (anchor) place(peek, anchor, 'start'); });
     const target = event => event.target.closest && event.target.closest('[data-asset]');
-    const hoverTarget = event => event.target.closest && event.target.closest('[data-asset], [data-peek-shot]');
+    const hoverTarget = event => event.target.closest && event.target.closest('[data-asset], [data-peek-shot], [data-peek-video]');
     document.addEventListener('pointerover', event => { const node = hoverTarget(event); if (node) show(node); else hide(); });
     document.addEventListener('focusin', event => { const node = target(event); if (node) show(node); else hide(); });
     document.addEventListener('keydown', event => {
@@ -1528,6 +3008,10 @@
 
   /* ---------- 事件 ---------- */
   function setupEvents() {
+    // 只读时不可用的控件（aria-disabled）按下鼠标不拿焦点，免得出现焦点指示条、看起来像点中了
+    document.addEventListener('mousedown', event => {
+      if (event.target.closest && event.target.closest('[aria-disabled="true"]')) event.preventDefault();
+    });
     $('tab-table').addEventListener('click', () => setView('table'));
     $('tab-timeline').addEventListener('click', () => setView('timeline'));
     document.querySelector('[role="tablist"]').addEventListener('keydown', event => {
@@ -1548,6 +3032,18 @@
       if (row) select(row.dataset.id);
     });
     $('view-timeline').addEventListener('keydown', event => {
+      if (event.target.closest('.marker') && state.editing) {
+        if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); deleteItem(); }
+        return;
+      }
+      const lane = event.target.closest('.media-clip, .cue');
+      if (lane && state.editing) {
+        if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); deleteItem(); return; }
+        if (event.key.toLowerCase() === 'k' && event.ctrlKey) { event.preventDefault(); splitItem(); return; }
+        const delta = {ArrowRight: 1, ArrowLeft: -1}[event.key];
+        if (delta && !event.ctrlKey) { event.preventDefault(); nudgeLane(delta, event.shiftKey); return; }
+        return;
+      }
       if (!event.target.classList.contains('clip')) return;
       if (nudgeClip(event)) { event.preventDefault(); return; }
       const delta = {ArrowRight: 1, ArrowLeft: -1}[event.key];
@@ -1555,10 +3051,14 @@
     });
     $('edit-toggle').addEventListener('click', toggleEditing);
     $('save').addEventListener('click', () => save());
+    // Ctrl+Z 撤销、Ctrl+Shift+Z 或 Ctrl+Y 重做；只影响编辑中的文档，只读时不起作用
     document.addEventListener('keydown', event => {
-      if (event.ctrlKey && !event.altKey && !event.metaKey && event.key.toLowerCase() === 's') {
-        event.preventDefault(); save();
-      }
+      if (!state.editing || !(event.ctrlKey && !event.altKey && !event.metaKey)) return;
+      if (event.target.closest && event.target.closest('input, textarea, [contenteditable]')) return;
+      const key = event.key.toLowerCase();
+      if (key === 's') { event.preventDefault(); save(); }
+      else if (key === 'z') { event.preventDefault(); timeTravel(!event.shiftKey); }
+      else if (key === 'y') { event.preventDefault(); timeTravel(false); }
     });
     if (host) host.addEventListener('message', event => {
       const data = event.data || {};
@@ -1567,6 +3067,9 @@
       else if (data.type === 'info') showVersion(data.version);
       else if (data.type === 'update') showUpdate(data.version);
       else if (data.type === 'thumbs') onThumbs(data);
+      else if (data.type === 'mediaPicked') onMediaPicked(data);
+      else if (data.type === 'mediaUrls') onMediaUrls(data.urls);
+      else if (data.type === 'subtitlePicked') onSubtitlePicked(data);
     });
   }
 
@@ -1577,6 +3080,10 @@
   setupPeek();
   setupDialog();
   setupTimelineDrag();
+  setupLaneDrag();
+  setupMarkers();
+  setupEditToggles();
+  setupContextMenu();
   setupTimelineView();
   setupMonitor();
   setupAspect();
@@ -1588,5 +3095,5 @@
   status(!canEdit() ? '这是已确认或定稿的版本，只能查看。'
     : normalized ? '有 ' + normalized + ' 个镜头的时长已按 0.1 秒规整显示（按累计切点取整，总长不变）；文件尚未改动，解锁编辑并保存后才写回。'
     : '只读查看中。需要修改时点击“解锁编辑”。');
-  if (host) host.postMessage({type: 'ready'});
+  if (host) { host.postMessage({type: 'ready'}); media.live = true; resolveMedia(); }
 })();

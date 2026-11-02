@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BUNDLE = ROOT / 'native-prototype/bin/win-x64'
 INPUTS = (
     'native-prototype/build.py', 'scripts/editor_bundle.py', 'scripts/html_spec.py',
-    'native-prototype/src/Host.cs', 'native-prototype/src/DocumentSession.cs',
+    'native-prototype/src/Host.cs', 'native-prototype/src/Media.cs', 'native-prototype/src/Subtitle.cs', 'native-prototype/src/DocumentSession.cs',
     'native-prototype/ui/index.html', 'native-prototype/ui/tokens.css',
     'native-prototype/ui/app.css', 'native-prototype/ui/app.js',
     'native-prototype/assets/kpl.ico',
@@ -32,7 +32,7 @@ def write_manifest(bundle, before, sdk_label):
     if input_hashes() != before:
         raise RuntimeError('Build inputs changed during compilation; do not distribute this output.')
     data = {'schema': 'kpl-editor-bundle-v1', 'platform': 'windows-x64',
-            'sdk': sdk_label, 'document_schema': 'kpl-user-spec-v2',
+            'sdk': sdk_label, 'document_schema': 'kpl-user-spec-v3',
             'build_inputs_sha256': before,
             'files_sha256': {name: sha(bundle / name) for name in OUTPUTS}}
     (bundle / 'manifest.json').write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n',

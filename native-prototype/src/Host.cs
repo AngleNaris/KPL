@@ -27,7 +27,7 @@ internal static class Program
     }
 }
 
-internal sealed class EditorWindow : Form
+internal sealed partial class EditorWindow : Form
 {
     private readonly DocumentSession session;
     private readonly string profile;
@@ -167,6 +167,7 @@ internal sealed class EditorWindow : Form
                 }
             }
             catch (Exception) { /* 缓存不可用不影响打开 */ }
+            MapMediaDrives();
             view.NavigateToString(Render(session.InitialJson, Prefs.Load()));
         }
         catch (Exception ex)
@@ -190,6 +191,7 @@ internal sealed class EditorWindow : Form
         if (type == "prefs") { object prefs; if (message.TryGetValue("prefs", out prefs)) Prefs.Save(prefs as Dictionary<string, object>); return; }
         if (type == "copyImage") { object rel; message.TryGetValue("path", out rel); Post("copyResult", CopyImage(rel as string)); return; }
         if (type == "closeApproved") { allowClose = true; BeginInvoke((Action)Close); return; }
+        if (type == "pickMedia" || type == "resolveMedia" || type == "pickSubtitle") { OnMediaMessage(type, message); return; }
         if (type != "save") return;
         object raw; string result;
         if (!message.TryGetValue("model", out raw) || !(raw is Dictionary<string, object>)) result = "invalid";
@@ -434,8 +436,9 @@ internal static class Prefs
 {
     // 测试会改指到临时目录，不碰用户真实偏好
     internal static string FilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "KPL", "prefs.json");
-    private static readonly string[] Modes = { "system", "light", "dark" }, Accents = { "amber", "red", "teal", "blue" }, Sizes = { "panelH", "asideW", "winW", "winH" };
+    private static readonly string[] Modes = { "system", "light", "dark" }, Accents = { "amber", "red", "teal", "blue" }, Sizes = { "panelH", "asideW", "gutterW", "winW", "winH" };
     private static readonly string[] WindowKeys = { "winW", "winH", "winMax" };
+    private static readonly string[] Flags = { "snap", "link" };
 
     private static Dictionary<string, object> Clean(Dictionary<string, object> raw)
     {
@@ -450,6 +453,9 @@ internal static class Prefs
             if (size >= 100 && size <= 8000) clean[key] = (int)Math.Round(size);
         }
         if (raw != null && raw.TryGetValue("winMax", out value) && value is bool) clean["winMax"] = value;
+        // 时间线的吸附与联动开关
+        foreach (string key in Flags)
+            if (raw != null && raw.TryGetValue(key, out value) && value is bool) clean[key] = value;
         return clean;
     }
 

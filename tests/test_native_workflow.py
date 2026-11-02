@@ -248,7 +248,7 @@ class NativeCSharpTests(unittest.TestCase):
     def test_host_thumbnails_and_prefs_merge(self):
         core = ROOT / 'native-prototype/bin/win-x64/Microsoft.Web.WebView2.Core.dll'
         shutil.copy2(core, self.dir)
-        result = self.compile_and_run('HostTests', ['native-prototype/src/Host.cs', 'native-prototype/src/DocumentSession.cs', 'native-prototype/tests/HostTests.cs'],
+        result = self.compile_and_run('HostTests', ['native-prototype/src/Host.cs', 'native-prototype/src/Media.cs', 'native-prototype/src/Subtitle.cs', 'native-prototype/src/DocumentSession.cs', 'native-prototype/tests/HostTests.cs'],
                                       [str(core), 'System.Windows.Forms.dll', 'System.Drawing.dll', 'System.Web.Extensions.dll'],
                                       main='HostTests', arg=self.dir / 'work')
         self.assertEqual(result.returncode, 0, result.stderr.decode('utf-8', 'replace'))

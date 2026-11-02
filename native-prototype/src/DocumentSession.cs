@@ -19,6 +19,21 @@ internal sealed class DocumentSession
     private static readonly string[] Fields = { "number", "duration_seconds", "thumbnail", "content", "description", "shot_scale", "camera_motion", "prompt", "video_prompt", "mark" };
     private static readonly string[] AssetFields = { "id", "name", "path" };
     private static readonly string[] RootFields = { "schema", "document_id", "version", "status", "confirmation", "revision", "title", "summary", "global_settings", "layout_aspect", "assets", "shots" };
+    // v3 只比 v2 多一个 timeline；加入媒体后保存时由 v2 原地升级
+    internal const string SchemaV2 = "kpl-user-spec-v2", SchemaV3 = "kpl-user-spec-v3";
+    // 音频轨只能关声音；视频轨可分别关声音（muted）与画面（hidden）；字幕轨只能关画面
+    private static readonly string[] TrackFields = { "id", "name", "muted", "locked", "gain", "clips" };
+    private static readonly string[] VideoTrackFields = { "id", "name", "muted", "hidden", "locked", "gain", "clips" };
+    // takes：同一镜头的其他候选版本，顶层字段是当前使用的版本；切换就是两者互换
+    private static readonly string[] MainClipFields = { "id", "shot_id", "source", "in_us", "out_us", "audio", "takes" };
+    private static readonly string[] TakeFields = { "id", "source", "in_us", "out_us", "audio" };
+    private static readonly string[] VideoClipFields = { "id", "start_us", "source", "in_us", "out_us", "audio" };
+    private static readonly string[] AudioClipFields = { "id", "start_us", "source", "in_us", "out_us" };
+    private static readonly string[] MarkerFields = { "id", "start_us", "end_us", "text", "author" };
+    private static readonly string[] SubtitleTrackFields = { "id", "name", "language", "hidden", "locked", "cues" };
+    private static readonly string[] CueFields = { "id", "start_us", "end_us", "text", "words" };
+    private static readonly string[] WordFields = { "start_us", "end_us", "text" };
+    private const long MaxUs = 86400000000L;
     private static readonly HashSet<string> Marks = new HashSet<string>(StringComparer.Ordinal) { "", "done", "revise", "wip", "question", "hold" };
 
     internal DocumentSession(string file)
@@ -67,8 +82,13 @@ internal sealed class DocumentSession
     // strictDuration：时长只允许精确到 0.1 秒（保存与新文件）；打开旧文件时放宽为任意正小数
     internal static void Validate(Dictionary<string, object> obj, bool strictDuration)
     {
-        ExactFields(obj, RootFields);
-        if (StringField(obj, "schema") != "kpl-user-spec-v2" || StringField(obj, "document_id").Trim().Length == 0)
+        object schemaValue;
+        bool v3 = obj.TryGetValue("schema", out schemaValue) && SchemaV3.Equals(schemaValue);
+        var rootFields = new List<string>(RootFields);
+        if (v3) rootFields.Add("timeline");
+        ExactFields(obj, rootFields);
+        string schema = StringField(obj, "schema");
+        if (!(schema == SchemaV2 || schema == SchemaV3) || StringField(obj, "document_id").Trim().Length == 0)
             throw new InvalidDataException("规格类型或文档标识无效。");
         if (!Regex.IsMatch(StringField(obj, "version"), @"^v(?:00[1-9]|0[1-9][0-9]|[1-9][0-9]{2})$"))
             throw new InvalidDataException("版本无效。");
@@ -119,6 +139,163 @@ internal sealed class DocumentSession
             if (!Marks.Contains(StringField(shot, "mark"))) throw new InvalidDataException("镜头标记无效。");
             if (!ValidCamera(shot["layout_camera"])) throw new InvalidDataException("预览运镜须为空，或 static/linear 加两个有效裁切框。");
         }
+        if (v3) ValidateTimeline(obj["timeline"], ids);
+    }
+
+    // 时间为整数微秒，片段采用素材的 [in_us, out_us)；video[0] 是主轨，序号越大越靠上并覆盖下层
+    private static void ValidateTimeline(object value, HashSet<string> shotIds)
+    {
+        var timeline = value as Dictionary<string, object>;
+        if (timeline == null) throw new InvalidDataException("时间线无效。");
+        ExactFields(timeline, new[] { "video", "audio", "subtitles", "markers", "markers_locked" });
+        BoolField(timeline, "markers_locked");
+        var video = timeline["video"] as object[]; var audio = timeline["audio"] as object[]; var markers = timeline["markers"] as object[];
+        var subtitles = timeline["subtitles"] as object[];
+        if (video == null || video.Length == 0 || audio == null || markers == null || subtitles == null) throw new InvalidDataException("时间线需要主视频轨，以及轨道与标记列表。");
+        var ids = new HashSet<string>(StringComparer.Ordinal); var linked = new HashSet<string>(StringComparer.Ordinal);
+        for (int pass = 0; pass < 2; pass++)
+        {
+            object[] tracks = pass == 0 ? video : audio;
+            for (int index = 0; index < tracks.Length; index++)
+            {
+                var track = tracks[index] as Dictionary<string, object>;
+                if (track == null) throw new InvalidDataException("轨道无效。");
+                ExactFields(track, pass == 0 ? VideoTrackFields : TrackFields);
+                TimelineId(StringField(track, "id"), ids); StringField(track, "name");
+                if (!(track["muted"] is bool)) throw new InvalidDataException("轨道静音状态无效。");
+                if (pass == 0) BoolField(track, "hidden");
+                BoolField(track, "locked");
+                decimal gain;
+                if (!Number(track["gain"], out gain) || gain < 0 || gain > 1) throw new InvalidDataException("轨道音量应在 0 到 1 之间。");
+                var clips = track["clips"] as object[];
+                if (clips == null) throw new InvalidDataException("片段列表无效。");
+                bool main = pass == 0 && index == 0;
+                var spans = new List<long[]>();
+                foreach (object item in clips)
+                {
+                    var clip = item as Dictionary<string, object>;
+                    if (clip == null) throw new InvalidDataException("片段无效。");
+                    ExactFields(clip, main ? MainClipFields : pass == 0 ? VideoClipFields : AudioClipFields);
+                    TimelineId(StringField(clip, "id"), ids);
+                    if (!ValidSource(StringField(clip, "source"))) throw new InvalidDataException("片段素材路径无效。");
+                    long from = Us(clip["in_us"]), to = Us(clip["out_us"]);
+                    if (to <= from) throw new InvalidDataException("片段出点必须晚于入点。");
+                    if (pass == 0 && !(clip["audio"] is bool)) throw new InvalidDataException("片段声音状态无效。");
+                    if (main)
+                    {
+                        // 每个镜头最多关联一个视频
+                        string shot = StringField(clip, "shot_id");
+                        if (!shotIds.Contains(shot) || !linked.Add(shot)) throw new InvalidDataException("主轨片段须关联现有镜头，且每个镜头只关联一个视频。");
+                        var takes = clip["takes"] as object[];
+                        if (takes == null) throw new InvalidDataException("视频版本列表无效。");
+                        foreach (object entry in takes)
+                        {
+                            var take = entry as Dictionary<string, object>;
+                            if (take == null) throw new InvalidDataException("视频版本无效。");
+                            ExactFields(take, TakeFields);
+                            TimelineId(StringField(take, "id"), ids);
+                            if (!ValidSource(StringField(take, "source"))) throw new InvalidDataException("视频版本的素材路径无效。");
+                            if (Us(take["out_us"]) <= Us(take["in_us"])) throw new InvalidDataException("视频版本的出点必须晚于入点。");
+                            if (!(take["audio"] is bool)) throw new InvalidDataException("视频版本的声音状态无效。");
+                        }
+                        continue;
+                    }
+                    long start = Us(clip["start_us"]);
+                    if (start + to - from > MaxUs) throw new InvalidDataException("片段超出时间线范围。");
+                    spans.Add(new[] { start, start + to - from });
+                }
+                spans.Sort((a, b) => a[0].CompareTo(b[0]));
+                for (int i = 1; i < spans.Count; i++)
+                    if (spans[i - 1][1] > spans[i][0]) throw new InvalidDataException("同一轨道的片段不能重叠。");
+            }
+        }
+        // 字幕轨：条目是不依赖素材的文本，words 为零个或多个逐段时间（来自 ASS 卡拉 OK 标签）
+        foreach (object item in subtitles)
+        {
+            var track = item as Dictionary<string, object>;
+            if (track == null) throw new InvalidDataException("字幕轨无效。");
+            ExactFields(track, SubtitleTrackFields);
+            TimelineId(StringField(track, "id"), ids); StringField(track, "name"); StringField(track, "language");
+            BoolField(track, "hidden"); BoolField(track, "locked");
+            var cues = track["cues"] as object[];
+            if (cues == null) throw new InvalidDataException("字幕条目列表无效。");
+            var spans = new List<long[]>();
+            foreach (object entry in cues)
+            {
+                var cue = entry as Dictionary<string, object>;
+                if (cue == null) throw new InvalidDataException("字幕条目无效。");
+                ExactFields(cue, CueFields);
+                TimelineId(StringField(cue, "id"), ids);
+                if (StringField(cue, "text").Length > 2000) throw new InvalidDataException("字幕文字过长。");
+                long start = Us(cue["start_us"]), end = Us(cue["end_us"]);
+                if (end <= start) throw new InvalidDataException("字幕的结束时间必须晚于开始时间。");
+                var words = cue["words"] as object[];
+                if (words == null) throw new InvalidDataException("逐字时间列表无效。");
+                long last = start;
+                foreach (object part in words)
+                {
+                    var word = part as Dictionary<string, object>;
+                    if (word == null) throw new InvalidDataException("逐字时间无效。");
+                    ExactFields(word, WordFields);
+                    long from = Us(word["start_us"]), to = Us(word["end_us"]);
+                    if (StringField(word, "text").Length == 0 || to <= from || from < last || to > end)
+                        throw new InvalidDataException("逐字时间须按顺序落在本句范围内、互不重叠。");
+                    last = to;
+                }
+                spans.Add(new[] { start, end });
+            }
+            spans.Sort((a, b) => a[0].CompareTo(b[0]));
+            for (int i = 1; i < spans.Count; i++)
+                if (spans[i - 1][1] > spans[i][0]) throw new InvalidDataException("同一条字幕轨的条目不能重叠。");
+        }
+        foreach (object item in markers)
+        {
+            var marker = item as Dictionary<string, object>;
+            if (marker == null) throw new InvalidDataException("标记无效。");
+            ExactFields(marker, MarkerFields);
+            TimelineId(StringField(marker, "id"), ids);
+            long start = Us(marker["start_us"]);
+            if (marker["end_us"] != null && Us(marker["end_us"]) <= start) throw new InvalidDataException("范围标记的终点必须晚于起点。");
+            StringField(marker, "text");
+            string author = StringField(marker, "author");
+            if (!(author == "user" || author == "agent")) throw new InvalidDataException("标记作者无效。");
+        }
+    }
+
+    private static void TimelineId(string value, HashSet<string> ids)
+    {
+        if (!Regex.IsMatch(value, @"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$") || !ids.Add(value)) throw new InvalidDataException("时间线标识无效或重复：" + value);
+    }
+
+    private static bool BoolField(Dictionary<string, object> item, string key)
+    {
+        object value;
+        if (!item.TryGetValue(key, out value) || !(value is bool)) throw new InvalidDataException(key + " 须为布尔值。");
+        return (bool)value;
+    }
+
+    private static long Us(object value)
+    {
+        if (!(value is int || value is long)) throw new InvalidDataException("时间须为整数微秒。");
+        long result = Convert.ToInt64(value, CultureInfo.InvariantCulture);
+        if (result < 0 || result > MaxUs) throw new InvalidDataException("时间超出支持范围。");
+        return result;
+    }
+
+    private static bool Number(object value, out decimal result)
+    {
+        result = 0;
+        if (value is int) result = (int)value;
+        else if (value is long) result = (long)value;
+        else if (value is decimal) result = (decimal)value;
+        else return false;
+        return true;
+    }
+
+    // 媒体路径相对 .kpldoc 所在目录（素材在其他盘时可为绝对路径），统一用 / 分隔
+    internal static bool ValidSource(string value)
+    {
+        return value.Length > 0 && value.Trim() == value && !Regex.IsMatch(value, @"[\\\x00-\x1f]");
     }
 
     // 预览画幅：空（按 16:9 预览）或“宽:高”，两边都是正数。
@@ -194,8 +371,11 @@ internal sealed class DocumentSession
     {
         Validate(next);
         if ((string)model["status"] == "final" || (string)model["confirmation"] == "confirmed") return "locked";
-        foreach (string key in new[] { "schema", "document_id", "version", "status", "confirmation" })
+        foreach (string key in new[] { "document_id", "version", "status", "confirmation" })
             if (!Object.Equals(model[key], next[key])) return "identity_changed";
+        // 规格类型只允许不变，或在加入媒体后由 v2 升级为 v3
+        if (!Object.Equals(model["schema"], next["schema"]) && !(SchemaV2.Equals(model["schema"]) && SchemaV3.Equals(next["schema"])))
+            return "identity_changed";
         if ((int)next["revision"] != (int)model["revision"] + 1) return "revision_changed";
         byte[] payload = new UTF8Encoding(false).GetBytes(serializer.Serialize(next) + "\n");
         if (payload.Length > MaxBytes) return "too_large";

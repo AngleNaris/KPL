@@ -106,6 +106,60 @@ class HtmlSpecTests(unittest.TestCase):
             changed = copy.deepcopy(self.model); changed['shots'][0]['layout_camera'] = camera; changed['layout_aspect'] = '2.39:1'
             html_spec.validate(changed)
 
+    def test_v3_timeline_contract(self):
+        model = copy.deepcopy(self.model)
+        model['schema'] = 'kpl-user-spec-v3'
+        model['timeline'] = {
+            'video': [
+                {'id':'V1', 'name':'', 'muted':False, 'hidden':False, 'locked':False, 'gain':1, 'clips':[
+                    {'id':'c1', 'shot_id':'stable-shot-1', 'source':'../07_预演交付/S001.mp4', 'in_us':0, 'out_us':1900000, 'audio':True,
+                     'takes':[{'id':'t1', 'source':'../07_预演交付/S001_v002.mp4', 'in_us':0, 'out_us':1800000, 'audio':False}]}]},
+                {'id':'V2', 'name':'空镜', 'muted':True, 'hidden':True, 'locked':True, 'gain':0.5, 'clips':[
+                    {'id':'c2', 'start_us':0, 'source':'D:/素材/空镜.mov', 'in_us':500000, 'out_us':900000, 'audio':False},
+                    {'id':'c3', 'start_us':400000, 'source':'空镜.mov', 'in_us':0, 'out_us':100000, 'audio':False}]}],
+            'audio': [{'id':'A1', 'name':'', 'muted':False, 'locked':False, 'gain':0.8, 'clips':[
+                {'id':'c4', 'start_us':0, 'source':'音乐.wav', 'in_us':0, 'out_us':60000000}]}],
+            'subtitles': [{'id':'S1', 'name':'歌词', 'language':'zh', 'hidden':False, 'locked':False, 'cues':[
+                {'id':'q1', 'start_us':164600000, 'end_us':170000000, 'text':'长风卷起了漫天狂沙', 'words':[
+                    {'start_us':164600000, 'end_us':165100000, 'text':'长风'},
+                    {'start_us':165100000, 'end_us':170000000, 'text':'卷起了漫天狂沙'}]}]}],
+            'markers': [{'id':'m1', 'start_us':0, 'end_us':None, 'text':'起', 'author':'user'},
+                        {'id':'m2', 'start_us':100, 'end_us':2000000, 'text':'', 'author':'agent'}], 'markers_locked':False}
+        html_spec.validate(copy.deepcopy(model))
+        empty = copy.deepcopy(model)
+        empty['timeline'] = {'video':[{'id':'V1', 'name':'', 'muted':False, 'hidden':False, 'locked':False, 'gain':1, 'clips':[]}], 'audio':[], 'subtitles':[], 'markers':[], 'markers_locked':False}
+        html_spec.validate(empty)
+        video, audio = (lambda m: m['timeline']['video']), (lambda m: m['timeline']['audio'])
+        cases = [
+            lambda m: m.pop('timeline'),
+            lambda m: m.update(schema='kpl-user-spec-v2'),
+            lambda m: m['timeline'].update(video=[]),
+            lambda m: m['timeline'].update(extra=[]),
+            lambda m: video(m)[0]['clips'][0].update(shot_id='missing'),
+            lambda m: video(m)[0]['clips'][0]['takes'][0].update(id='c1'),                   # 版本 ID 也要全局唯一
+            lambda m: video(m)[0]['clips'][0]['takes'][0].update(out_us=0),
+            lambda m: video(m)[0]['clips'].append(dict(video(m)[0]['clips'][0], id='c9')),   # 同一镜头关联两个视频
+            lambda m: video(m)[0]['clips'][0].update(start_us=0),                            # 主轨片段没有位置字段
+            lambda m: video(m)[1]['clips'][0].update(shot_id='stable-shot-1'),               # 自由轨不绑定镜头
+            lambda m: video(m)[1]['clips'][1].update(start_us=300000),                       # 同轨重叠
+            lambda m: video(m)[1]['clips'][0].update(out_us=500000),
+            lambda m: video(m)[1]['clips'][0].update(in_us=1.5),
+            lambda m: video(m)[1]['clips'][0].update(source='a\\b.mov'),
+            lambda m: video(m)[1]['clips'][0].update(source=''),
+            lambda m: video(m)[1].update(gain=1.5),
+            lambda m: video(m)[1].update(muted=0),
+            lambda m: video(m)[1].update(id='V1'),
+            lambda m: audio(m)[0]['clips'][0].update(audio=True),
+            lambda m: audio(m)[0]['clips'][0].update(id='c1'),
+            lambda m: m['timeline']['markers'][1].update(end_us=100),
+            lambda m: m['timeline']['markers'][0].update(author='bot'),
+        ]
+        for mutate in cases:
+            changed = copy.deepcopy(model); mutate(changed)
+            with self.assertRaises(ValueError): html_spec.validate(changed)
+        with self.assertRaises(ValueError):
+            html_spec.validate(dict(copy.deepcopy(self.model), timeline=model['timeline']))  # v2 不带时间线
+
     def test_static_view_shows_v2_fields(self):
         output = html_spec.build(self.model)
         for text in ('一句话内容', '店员回头。', '近景', '进行中', '详细描述', '图片生成提示词', '视频提示词', '慢慢回头', 'A01'):

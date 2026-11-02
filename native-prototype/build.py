@@ -27,8 +27,8 @@ ICON = ASSETS / 'kpl.ico'
 # inputs remain supported but their claimed version is deliberately unverified.
 SDK_HASHES = ('37f37a80a2ce89388b30c38185a9ba3af1727a2ebbb59698e13725db770c9816',
               '01f0a861a802233411fe0d406988c211794c0f58ce2edb62ff97c31f5b1aa2fe')
-# 图片只来自宿主映射的只读缩略图缓存（原图不让页面直接载入）；不允许任何网络或文件访问
-CSP = ("default-src 'none'; img-src https://kpl-thumbs.local; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
+# 图片只来自宿主映射的只读缩略图缓存（原图不让页面直接载入），音视频只来自宿主按文件夹映射的媒体主机；不允许任何网络或文件访问
+CSP = ("default-src 'none'; img-src https://kpl-thumbs.local; media-src https://*.kpl-media.local; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
        "connect-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'")
 
 
@@ -72,7 +72,8 @@ def main(argv=None):
             '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll', '/reference:System.Web.Extensions.dll',
             '/resource:' + str(resource) + ',KplNativeTemplate',
             '/resource:' + str(ICON) + ',KplIcon',
-            str(HERE / 'src' / 'Host.cs'), str(HERE / 'src' / 'DocumentSession.cs')]
+            str(HERE / 'src' / 'Host.cs'), str(HERE / 'src' / 'Media.cs'), str(HERE / 'src' / 'Subtitle.cs'),
+            str(HERE / 'src' / 'DocumentSession.cs')]
         subprocess.run(command, check=True)
     shutil.copy2(args.core, out / 'Microsoft.Web.WebView2.Core.dll')
     shutil.copy2(args.loader, out / 'WebView2Loader.dll')
