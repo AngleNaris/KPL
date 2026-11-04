@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BUNDLE = ROOT / 'native-prototype/bin/win-x64'
 INPUTS = (
     'native-prototype/build.py', 'scripts/editor_bundle.py', 'scripts/html_spec.py',
-    'native-prototype/src/Host.cs', 'native-prototype/src/Media.cs', 'native-prototype/src/Subtitle.cs', 'native-prototype/src/DocumentSession.cs',
+    'native-prototype/src/Host.cs', 'native-prototype/src/Media.cs', 'native-prototype/src/Subtitle.cs', 'native-prototype/src/Export.cs', 'native-prototype/src/VideoExport.cs', 'native-prototype/src/DocumentSession.cs',
     'native-prototype/ui/index.html', 'native-prototype/ui/tokens.css',
     'native-prototype/ui/app.css', 'native-prototype/ui/app.js',
     'native-prototype/assets/kpl.ico',

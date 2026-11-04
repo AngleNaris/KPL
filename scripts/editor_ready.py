@@ -56,6 +56,8 @@ def pristine_owned(snapshot, old_exe):
 
 
 def classify(info, desktop_account, exe):
+    # 不另外指定时，以当前会话里登录桌面的用户为准
+    desktop_account = desktop_account or info.get('desktop_account')
     if not desktop_account or not info.get('account'):
         return 'target_account_required'
     if desktop_account.casefold() != info['account'].casefold():
@@ -77,12 +79,47 @@ def classify(info, desktop_account, exe):
     return 'needs_setup'
 
 
+def current_account():
+    """当前进程的 Windows 账户（计算机或域\\用户名）。直接调用系统 API，不解析 whoami 的控制台输出：
+    控制台按系统代码页（如 GBK）输出，中文用户名按其他编码读取会乱码或出错。"""
+    import ctypes
+    from ctypes import wintypes
+    secur32 = ctypes.WinDLL('secur32')
+    size = wintypes.ULONG(0)
+    secur32.GetUserNameExW(2, None, ctypes.byref(size))   # 2 = NameSamCompatible
+    buffer = ctypes.create_unicode_buffer(size.value or 1)
+    if not secur32.GetUserNameExW(2, buffer, ctypes.byref(size)):
+        raise OSError('cannot read the current Windows account')
+    return buffer.value
+
+
+def desktop_account():
+    """当前会话里登录桌面的用户；隔离账户或服务（会话 0 没有桌面用户）运行时与 current_account 不同或为 None。"""
+    import ctypes
+    from ctypes import wintypes
+    kernel32, wtsapi32 = ctypes.WinDLL('kernel32'), ctypes.WinDLL('wtsapi32')
+    session = wintypes.DWORD()
+    if not kernel32.ProcessIdToSessionId(kernel32.GetCurrentProcessId(), ctypes.byref(session)):
+        return None
+
+    def query(kind):
+        buffer, size = wintypes.LPWSTR(), wintypes.DWORD()
+        if not wtsapi32.WTSQuerySessionInformationW(None, session, kind, ctypes.byref(buffer), ctypes.byref(size)):
+            return ''
+        try:
+            return buffer.value or ''
+        finally:
+            wtsapi32.WTSFreeMemory(buffer)
+    user, domain = query(5), query(7)   # WTSUserName, WTSDomainName
+    return domain + '\\' + user if user else None
+
+
 def probe(exe):
     if os.name != 'nt':
         raise OSError('only Windows can inspect the native editor')
     import winreg
     exe = Path(exe).absolute()
-    account = subprocess.run(['whoami'], check=True, capture_output=True, text=True).stdout.strip()
+    account, desktop = current_account(), desktop_account()
 
     def key_exists(base, path):
         try:
@@ -159,7 +196,7 @@ def probe(exe):
             'webview': webview, 'webview_versions': runtime_versions, 'user_choice': user_choice,
             'user_choice_present': user_choice_present, 'ownership': ownership,
             'association_records': records, 'effective_command': command,
-            'inspection_error': inspection_error}
+            'inspection_error': inspection_error, 'desktop_account': desktop}
 
 
 def check(exe, desktop_account):
@@ -205,7 +242,8 @@ def setup(exe, desktop_account, authorization_ref, expected_current=None):
     if rebind:
         command.extend(['-ExpectedExecutable', actual, '-ConfirmRebind'])
     try:
-        completed = subprocess.run(command, capture_output=True, text=True, errors='replace', timeout=30)
+        # PowerShell 按系统 OEM 代码页输出（中文系统为 GBK）
+        completed = subprocess.run(command, capture_output=True, text=True, encoding='oem', errors='replace', timeout=30)
     except subprocess.TimeoutExpired:
         return {**before, 'status': 'setup_unconfirmed', 'action': 'inspect_before_retry',
                 'detail': '关联操作超时；执行结果未知，先检查当前实际状态。'}
@@ -231,7 +269,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('check', 'setup'))
     parser.add_argument('--exe', type=Path, default=PACKAGED_EXE, help='默认使用随技能打包的共享编辑器；可指定自编译程序')
-    parser.add_argument('--desktop-account', required=True, help='桌面用户的 Windows 账户，格式同 whoami')
+    parser.add_argument('--desktop-account', help='一般不需要：默认取当前会话里登录桌面的用户，与运行脚本的账户比对')
     parser.add_argument('--authorization-ref', help='setup 时用户授权的来源；文字本身不证明授权')
     parser.add_argument('--expected-current', type=Path, help='只在用户具体同意替换 KPL 自有关联时传入原编辑器路径')
     args = parser.parse_args(argv)

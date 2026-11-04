@@ -47,6 +47,9 @@ MARKS = {'': '未标记', 'done': '完成', 'revise': '待修改', 'wip': '进�
 ASSET_DIR = '../05_参考资产/'
 # 描述与提示词中的分段标记 {类别:内容}；只读视图只显示内容（格式见 references/spec-format.md）
 DESCRIPTION_LIMIT = 300
+# 一句话内容最多 30 个单位：每个中日韩字符算一个，每个英文单词或数字算一个，标点与空格不算
+CONTENT_LIMIT = 30
+CONTENT_UNIT = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]|[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*")
 SEGMENTED_FIELDS = ('description', 'prompt', 'video_prompt')
 SEGMENT = re.compile(r'\{(?:镜头|风格|场景|动态|约束)[:：]((?:@\{[^{}]*\}|[^{}])*)\}')
 TAGGED_SEGMENT = re.compile(r'\{(镜头|风格|场景|动态|约束)[:：]((?:@\{[^{}]*\}|[^{}])*)\}')
@@ -316,6 +319,13 @@ def check_segments(label, value):
                              'with no untagged text: %s' % (label, number, line.strip()[:60]))
 
 
+def check_content(label, value):
+    count = len(CONTENT_UNIT.findall(value))
+    if count > CONTENT_LIMIT:
+        raise ValueError('%s content has %d units; limit is %d Chinese characters or English words (punctuation not '
+                         'counted). Keep it to one short sentence; put details in description' % (label, count, CONTENT_LIMIT))
+
+
 def check_beats(label, value, duration):
     """视频提示词的动态时段：只在动态段开头用固定写法；有时段时从 0 开始首尾相接，最后一段结束于镜头时长。"""
     tenths = lambda text: round(float(text) * 10)
@@ -579,16 +589,38 @@ def _apply_changes_locked(root, relative, expected, patch):
                            parse_constant=lambda s: (_ for _ in ()).throw(ValueError('invalid number: ' + s)))
         validate(model)  # v1 is intentionally read-only
     original_model = copy.deepcopy(model)
-    if model['status'] == 'final' or model['confirmation'] == 'confirmed':
-        raise ValueError('confirmed/final version is locked; create a draft version instead')
     operations = patch.get('operations') if isinstance(patch, dict) else None
     if not isinstance(operations, list) or not operations:
         raise ValueError('at least one explicit operation is required')
+    # 规格只有一个文件，原地更新。已确认/定稿的版本只能用单独一条 state 操作重新打开（改回草稿、version 加一），不另建文件
+    locked = model['status'] == 'final' or model['confirmation'] == 'confirmed'
+    if locked and not (len(operations) == 1 and isinstance(operations[0], dict) and operations[0].get('action') == 'state'):
+        raise ValueError('confirmed/final spec is locked; with explicit user approval, reopen it in place with a single '
+                         'project state operation (back to draft/unconfirmed, version + 1), then edit; never create another spec file')
     changed, timed = [], set()
     for operation in operations:
         if not isinstance(operation, dict) or operation.get('target') not in {'project', 'shot', 'asset'}:
             raise ValueError('invalid operation')
         action = operation.get('action', 'set')
+        if operation['target'] == 'project' and action == 'state':
+            # 状态与确认：每次都要用户授权的来源；从已确认/定稿改回时 version 自动加一
+            old, new = operation.get('old'), operation.get('new')
+            keys = {'status', 'confirmation'}
+            if (not isinstance(old, dict) or not isinstance(new, dict) or set(old) != keys or set(new) != keys
+                    or any(model[key] != old[key] for key in keys)):
+                raise ValueError('project state changed or missing old/new {status, confirmation}')
+            if not isinstance(operation.get('authorization_ref'), str) or not operation['authorization_ref'].strip():
+                raise ValueError('changing spec status or confirmation needs the source of the user decision')
+            if locked and (new['status'] == 'final' or new['confirmation'] == 'confirmed'):
+                raise ValueError('reopen a confirmed/final spec to draft/unconfirmed before editing it')
+            model.update(new)
+            if locked:
+                number = int(model['version'][1:]) + 1
+                if number > 999:
+                    raise ValueError('version limit reached')
+                model['version'] = 'v%03d' % number
+            changed.append('project:state')
+            continue
         if operation['target'] == 'project':
             field = operation.get('field')
             if action != 'set' or field not in {'title', 'summary', 'global_settings', 'layout_aspect'}:
@@ -617,6 +649,8 @@ def _apply_changes_locked(root, relative, expected, patch):
                 for field in SEGMENTED_FIELDS:
                     if isinstance(row.get(field), str):
                         check_segments(ident + ' ' + field, row[field])
+                if isinstance(row.get('content'), str):
+                    check_content(ident, row['content'])
                 timed.add(ident)
             rows.append(row)
         elif action == 'remove':
@@ -638,6 +672,8 @@ def _apply_changes_locked(root, relative, expected, patch):
                 raise ValueError(kind + ' field changed or is invalid')
             if kind == 'shot' and field in SEGMENTED_FIELDS and operation['new'] != operation['old']:
                 check_segments(ident + ' ' + field, operation['new'])
+            if kind == 'shot' and field == 'content' and operation['new'] != operation['old']:
+                check_content(ident, operation['new'])
             if kind == 'shot' and field in ('video_prompt', 'duration_seconds') and operation['new'] != operation['old']:
                 timed.add(ident)
             matches[0][field] = operation['new']

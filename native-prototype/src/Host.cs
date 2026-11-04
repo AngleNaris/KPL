@@ -77,7 +77,7 @@ internal sealed partial class EditorWindow : Form
         loadTimer.Tick += delegate { loadTimer.Stop(); if (!loaded) MessageBox.Show("编辑器加载超时；原文件未被修改。请检查 WebView2 运行时。", "KPL 规格", MessageBoxButtons.OK, MessageBoxIcon.Error); };
         Resize += delegate { if (controller != null) controller.Bounds = ClientRectangle; };
         FormClosing += BeforeClose;
-        FormClosed += delegate { if (watcher != null) watcher.Dispose(); if (controller != null) { controller.Close(); controller = null; } CleanupProfile(); };
+        FormClosed += delegate { CancelVideoExport(); if (watcher != null) watcher.Dispose(); if (controller != null) { controller.Close(); controller = null; } CleanupProfile(); };
     }
 
     private void CleanupProfile()
@@ -194,6 +194,9 @@ internal sealed partial class EditorWindow : Form
         if (!loaded) return;
         if (type == "openUpdate") { OpenReleasePage(); return; }
         if (type == "prefs") { object prefs; if (message.TryGetValue("prefs", out prefs)) Prefs.Save(prefs as Dictionary<string, object>); return; }
+        if (type == "exportVideo") { StartVideoExport(message); return; }
+        if (type == "cancelExport") { CancelVideoExport(); return; }
+        if (type == "exportHtml") { var exported = ExportHtml(); exported["type"] = "exportResult"; exported["kind"] = "html"; PostRaw(exported); return; }
         if (type == "copyText") { object text; message.TryGetValue("text", out text); Post("copyTextResult", CopyText(text as string)); return; }
         if (type == "copyImage") { object rel; message.TryGetValue("path", out rel); Post("copyResult", CopyImage(rel as string)); return; }
         if (type == "closeApproved") { allowClose = true; BeginInvoke((Action)Close); return; }

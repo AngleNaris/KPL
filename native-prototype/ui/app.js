@@ -45,6 +45,9 @@
   const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const saved = JSON.parse($('kpl-authoritative-data').textContent);
+  /* 编辑器“导出 HTML”得到的只读页面：宿主写入 #kpl-export，base 是导出文件到规格所在目录的相对地址；
+     图片与视频按它读项目里的原文件。编辑器本身与预览环境为 null。 */
+  const exported = $('kpl-export') ? JSON.parse($('kpl-export').textContent) : null;
   const state = {
     doc: saved,
     working: clone(saved),
@@ -102,6 +105,10 @@
   }
   // 写入规格的时长只精确到 0.1 秒
   const DURATION_PATTERN = /^(?:\d+(?:\.\d)?|\.\d)$/;
+  // 一句话内容最多 30 个单位（与 scripts/html_spec.py 的 CONTENT_LIMIT 一致）：每个中日韩字符、每个英文单词或数字各算一个，标点不算
+  const CONTENT_LIMIT = 30;
+  const CONTENT_UNIT = /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]|[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g;
+  const contentUnits = text => ((text || '').match(CONTENT_UNIT) || []).length;
   const tenth = value => { const n = Math.round(value * 10) / 10; return Number.isInteger(n) ? String(n) : n.toFixed(1); };
 
   /* 旧文件可能有 1.4166666666666667 这类时长：按累计切点取 0.1 秒整再相减（最短 0.1 秒），总长不漂移。
@@ -184,7 +191,7 @@
     const chips = [...box.querySelectorAll('.beat')], total = seconds(shot) === null ? null : tenths(seconds(shot));
     let prev = 0;
     chips.forEach((chip, index) => {
-      const head = chip.dataset.beat.match(BEAT_PATTERN), from = tenths(head[1]), to = tenths(head[2]);
+      const head = chip.dataset.raw.match(BEAT_PATTERN), from = tenths(head[1]), to = tenths(head[2]);
       const ok = from === prev && to > from && (index < chips.length - 1 || total === null || to === total);
       const span = Math.max(total || 0, to, 1);
       chip.classList.toggle('is-warn', !ok);
@@ -314,6 +321,7 @@
   function imageUrl(path) {
     if (typeof path !== 'string' || !path.startsWith(ASSET_DIR)) return null;
     const rel = path.slice(ASSET_DIR.length).split('/').map(encodeURIComponent).join('/');
+    if (exported) return exported.base + encodeURI(path);
     return (host ? 'https://kpl-assets.local/' : 'preview-assets/') + rel;
   }
 
@@ -338,13 +346,15 @@
   }
 
   /* ---------- 渲染：文本染色 ---------- */
-  /* 只读时 @{…} 是可悬停、可点击复制的按钮；编辑时只是同样着色的文字。
-     按钮用 span[role=button]：原生 button 不能跨行断开。以换行结尾时补一个占位换行，保持同样的高度。 */
+  /* 找得到的 @{…} 显示成“@资产名”的引用块：与时段块一样不含文字节点（标签由 CSS 画出），原文记在 data-raw，
+     编辑时整体删除、不能改一半。只读时它是可悬停、可点击复制图片的按钮（span[role=button]：原生 button 不能跨行断开）。
+     找不到的引用照原文显示成警告色，方便直接改字。以换行结尾时补一个占位换行，保持同样的高度。 */
   function partNode(part, interactive) {
     if (part.picture) return el('span', {class: 'tok tok-picture', text: part.text});
-    if (part.asset && interactive) return el('span', {role: 'button', tabindex: '0', class: 'tok tok-ref', 'data-asset': part.asset.id,
-      'aria-label': part.asset.id + ' ' + part.asset.name + '，复制图片', text: part.text});
-    if (part.asset) return el('span', {class: 'tok tok-ref', text: part.text});
+    if (part.asset) return el('span', {class: 'tok tok-ref', contenteditable: 'false', 'data-raw': part.text, 'data-label': '@' + part.asset.name,
+      title: part.asset.id, role: interactive ? 'button' : null, tabindex: interactive ? '0' : null,
+      'data-asset': interactive ? part.asset.id : null,
+      'aria-label': interactive ? part.asset.id + ' ' + part.asset.name + '，复制图片' : '@' + part.asset.name});
     if (part.issue) return el('span', {class: 'tok tok-missing', title: part.issue, text: part.text});
     return document.createTextNode(part.text);
   }
@@ -357,12 +367,13 @@
       ? first.text.match(BEAT_PATTERN) : null;
     if (head) {
       nodes[0] = document.createTextNode(first.text.slice(head[0].length));
-      nodes.unshift(el('span', {class: 'beat', contenteditable: 'false', 'data-beat': head[0],
+      nodes.unshift(el('span', {class: 'beat', contenteditable: 'false', 'data-raw': head[0],
         'data-label': tenth(tenths(head[1]) / 10) + '–' + tenth(tenths(head[2]) / 10) + 's'}));
     }
     return el('span', {class: 'seg seg-' + SEGMENT_TAGS[tag], 'data-tag': tag, title: tag}, nodes);
   }
-  const isBeat = node => node.nodeType === Node.ELEMENT_NODE && node.dataset.beat !== undefined;
+  // 原子块（时段块、引用块）：不含文字节点，原文记在 data-raw
+  const isAtom = node => node.nodeType === Node.ELEMENT_NODE && node.dataset.raw !== undefined;
   const endBreak = () => el('br', {'data-end': ''});
 
   function richNodes(text, interactive, beatShot) {
@@ -375,17 +386,19 @@
   const childText = node => [...node.childNodes].map(nodeText).join('');
   function nodeText(node) {
     if (node.nodeType === Node.TEXT_NODE) return node.data;
-    if (isBeat(node)) return node.dataset.beat;
+    if (isAtom(node)) return node.dataset.raw;
     if (node.nodeName === 'BR') return node.hasAttribute('data-end') ? '' : '\n';
     const inner = childText(node);
     if (!node.dataset.tag) return inner;
     return inner ? '{' + node.dataset.tag + ':' + inner + '}' : '';
   }
 
-  /* 引用、空分段与实际文字不一致时才重绘，平时保留浏览器的撤销记录。 */
+  /* 引用（含能否找到）、空分段与实际文字不一致时才重绘，平时保留浏览器的撤销记录。 */
+  const tokKind = (name, picture) => picture ? 'picture' : resolve(name).asset ? 'ref' : 'missing';
   function stale(box) {
-    const refs = [...box.textContent.matchAll(REF_PATTERN)].map(match => match[0]).join('\0');
-    const toks = [...box.querySelectorAll('.tok')].map(node => node.textContent).join('\0');
+    const refs = [...childText(box).matchAll(REF_PATTERN)].map(match => match[0] + tokKind(match[1], match[1] === undefined)).join('\0');
+    const toks = [...box.querySelectorAll('.tok')].map(node => (node.dataset.raw || node.textContent)
+      + node.className.match(/tok-(ref|missing|picture)/)[1]).join('\0');
     return refs !== toks || box.querySelector('.seg:empty') !== null || (box.firstChild !== null && !childText(box).trim());
   }
 
@@ -410,7 +423,7 @@
   }
 
   /* 光标与选区按可见文字的偏移记录，重绘后再按偏移放回。时段块按原文计入，与保存的文字一一对应。 */
-  const plainOf = node => node.nodeType === Node.TEXT_NODE ? node.data : isBeat(node) ? node.dataset.beat
+  const plainOf = node => node.nodeType === Node.TEXT_NODE ? node.data : isAtom(node) ? node.dataset.raw
     : [...node.childNodes].map(plainOf).join('');
   function textOffset(root, node, at) {
     const range = document.createRange();
@@ -422,10 +435,10 @@
   function pointAt(root, offset) {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      const length = node.nodeType === Node.TEXT_NODE ? node.data.length : isBeat(node) ? node.dataset.beat.length : -1;
+      const length = node.nodeType === Node.TEXT_NODE ? node.data.length : isAtom(node) ? node.dataset.raw.length : -1;
       if (length < 0) continue;
       if (offset <= length && node.nodeType === Node.TEXT_NODE) return [node, offset];
-      // 落在时段块上时放到块的前面或后面
+      // 落在原子块上时放到块的前面或后面
       if (offset < length || (offset === length && !node.nextSibling)) {
         return [node.parentNode, [...node.parentNode.childNodes].indexOf(node) + (offset ? 1 : 0)];
       }
@@ -457,7 +470,7 @@
     const tags = [];
     const walk = (node, inherited) => {
       for (const child of node.childNodes) {
-        if (child.nodeType !== Node.TEXT_NODE && child.nodeName !== 'BR' && !isBeat(child)) { walk(child, child.dataset.tag || inherited); continue; }
+        if (child.nodeType !== Node.TEXT_NODE && child.nodeName !== 'BR' && !isAtom(child)) { walk(child, child.dataset.tag || inherited); continue; }
         const part = nodeText(child);
         text += part;
         tags.push(...Array(part.length).fill(inherited));
@@ -607,6 +620,97 @@
     });
   }
 
+  /* 导出：HTML 交接页面与时间线视频，都由宿主写文件；导出的是已保存的版本。 */
+  function openExportMenu(trigger) {
+    if (videoJob.running) {
+      openMenu({trigger, align: 'end', label: '导出', restore: () => trigger.focus(),
+        items: [{label: '取消导出', checked: false, icon: icon('trash'), pick: () => host.postMessage({type: 'cancelExport'})}]});
+      return;
+    }
+    openMenu({trigger, align: 'end', label: '导出', restore: () => trigger.focus(), items: [
+      {label: '导出 HTML…', hint: '只读交接', icon: icon('doc'), pick: () => exportAs('exportHtml')},
+      {label: '导出视频…', hint: 'MP4 · MOV · WAV', icon: icon('film'), pick: openVideoExport}
+    ].map(item => Object.assign({checked: false}, item))});
+  }
+
+  function exportAs(type, options) {
+    if (!host) { status('预览模式：没有连接宿主程序，不能导出文件。'); return; }
+    host.postMessage(Object.assign({type}, options || {}));
+    if (state.dirty) status('导出的是已保存的版本；未保存的修改不在其中。');
+  }
+
+  /* 导出视频的设置：格式、分辨率、帧率都要用户点选，不替用户猜（WAV 只要格式）。
+     分辨率按预览画幅给出常用尺寸；没设画幅时按第一个视频的尺寸，再没有按 16:9。 */
+  const VIDEO_FORMATS = [['mp4', 'MP4 · H.264'], ['mov', 'MOV · ProRes 422'], ['wav', 'WAV · 仅声音']];
+  const VIDEO_FPS = [['24000/1001', '23.976'], ['24', '24'], ['25', '25'], ['30000/1001', '29.97'], ['30', '30'], ['50', '50'], ['60', '60']];
+  const videoJob = {running: false};
+  const even = value => Math.max(2, Math.round(value / 2) * 2);
+
+  function exportRatio() {
+    if (validAspect(state.doc.layout_aspect || '') && state.doc.layout_aspect) return {value: aspectRatio(), label: state.doc.layout_aspect};
+    const first = timeline() && timeline().video[0].clips[0], node = first ? mediaElement(first.source) : null;
+    if (node && node.videoWidth) return {value: node.videoWidth / node.videoHeight, label: node.videoWidth + '×' + node.videoHeight + ' 视频'};
+    return {value: 16 / 9, label: '16:9'};
+  }
+
+  function openVideoExport() {
+    if (!host) { status('预览模式：没有连接宿主程序，不能导出文件。'); return; }
+    const dialog = $('video-dialog'), ratio = exportRatio();
+    const chips = (box, name, options) => box.replaceChildren(...options.map(([key, label]) =>
+      el('label', {class: 'chip'}, [el('input', {type: 'radio', name, value: key}), el('span', {text: label})])));
+    const value = name => { const input = dialog.querySelector('input[name="' + name + '"]:checked'); return input ? input.value : null; };
+    // 竖画幅时短边是宽
+    const sizes = [2160, 1440, 1080, 720].map(side => ratio.value >= 1 ? [even(side * ratio.value), side] : [side, even(side / ratio.value)]);
+    chips($('video-format'), 'vformat', VIDEO_FORMATS);
+    chips($('video-size'), 'vsize', sizes.map(([w, h]) => [w + 'x' + h, w + '×' + h]));
+    chips($('video-fps'), 'vfps', VIDEO_FPS);
+    $('video-size-label').textContent = '分辨率 · ' + ratio.label;
+    const sync = () => {
+      const audioOnly = value('vformat') === 'wav';
+      $('video-size-field').disabled = $('video-fps-field').disabled = audioOnly;
+      $('video-go').disabled = !value('vformat') || (!audioOnly && (!value('vsize') || !value('vfps')));
+    };
+    dialog.onchange = sync;
+    sync();
+    dialog.returnValue = 'cancel';
+    dialog.showModal();
+    dialog.addEventListener('close', () => {
+      if (dialog.returnValue !== 'export') return;
+      const [width, height] = (value('vsize') || '0x0').split('x').map(Number);
+      exportAs('exportVideo', {format: value('vformat'), width, height, fps: value('vfps') || ''});
+    }, {once: true});
+  }
+
+  /* 导出进度显示在“导出”按钮上；导出中再点它可以取消。 */
+  function onVideoExport(data) {
+    const label = $('export-trigger').querySelector('span');
+    if (data.status === 'started') { videoJob.running = true; label.textContent = '导出中 0%'; status('正在导出 ' + data.path + '…'); return; }
+    if (data.status === 'progress') { label.textContent = '导出中 ' + data.percent + '%'; return; }
+    videoJob.running = false;
+    label.textContent = '导出';
+    status({
+      done: '已导出 ' + data.path + '。',
+      cancelled: '已取消导出，没有留下文件。',
+      ffmpeg_missing: '没有找到 ffmpeg：导出视频需要系统里已安装的 ffmpeg 与 ffprobe（在 PATH 中），安装后重启编辑器再试。',
+      missing: '有素材找不到，没有导出：' + data.detail,
+      empty: '时间线是空的，没有可导出的内容。',
+      busy: '正在导出视频，完成或取消后再导出。',
+      invalid: '导出设置无效。',
+      failed: '导出失败，没有留下文件：' + (data.detail || 'ffmpeg 没有正常结束')
+    }[data.status] || '导出失败。');
+  }
+
+  const EXPORT_MESSAGES = {
+    exported: name => '已导出 ' + name + '。连同项目文件夹一起发给对方，图片和视频才能显示。',
+    not_overwritten: name => name + ' 不是导出的只读页面，没有覆盖；请换一个文件名。',
+    invalid_target: () => '只能导出为 .html 文件。',
+    write_failed: name => '无法写入 ' + name + '：文件被占用或没有写入权限。'
+  };
+  function onExportResult(data) {
+    if (data.kind !== 'html') { onVideoExport(data); return; }
+    if (data.status !== 'cancelled') status((EXPORT_MESSAGES[data.status] || EXPORT_MESSAGES.write_failed)(data.path));
+  }
+
   /* 一键复制提示词：去掉分段标记、保留换行，引用换成前后带空格的“@资产名”，方便在生成平台上手动设置引用的资产。
      找不到的引用照原名写成“@名字”；<Picture N> 原样保留。 */
   const COPYABLE = ['prompt', 'video_prompt'];
@@ -682,6 +786,13 @@
       readonly: !state.editing, tabindex: state.editing || tabbable ? '0' : '-1',
       'aria-invalid': key === 'duration_seconds' && filled(shot[key]) && !DURATION_PATTERN.test(shot[key].trim()) ? 'true' : null});
     input.value = shot[key] || '';
+    // 一句话内容超出上限时变警告色，title 写明字数；不拦保存，上限由 agent 端检查执行
+    const recount = () => {
+      const count = contentUnits(input.value), over = count > CONTENT_LIMIT;
+      input.classList.toggle('is-over', over);
+      input.title = over ? '超出 ' + CONTENT_LIMIT + ' 字：' + count + '/' + CONTENT_LIMIT + '（中文按字、英文按词，标点不计）' : '';
+    };
+    if (key === 'content') recount();
     if (key === 'duration_seconds') {
       // 输入过程中的半截数字不联动，改完离开单元格时再按改动前后的镜头位置平移其他轨道
       let link = null;
@@ -695,6 +806,7 @@
         input.nextElementSibling.hidden = !filled(input.value);
       }
       if (key === 'number' && shot.id === state.selectedId) $('detail-title').textContent = input.value;
+      if (key === 'content') recount();
       changed();
     });
     return input;
@@ -743,7 +855,7 @@
     return el('button', {type: 'button', class: 'clip', 'data-id': shot.id, 'aria-pressed': String(selected),
       tabindex: selected ? '0' : '-1', 'aria-label': shot.number + '，' + durationText(shot),
       'aria-keyshortcuts': state.editing && onTrack ? 'Alt+ArrowLeft Alt+ArrowRight Shift+ArrowLeft Shift+ArrowRight' : null,
-      onclick: () => { if (!suppressClick) select(shot.id); }}, [
+      onclick: event => { if (!suppressClick && !(onTrack && state.editing && multiKey(event))) select(shot.id); }}, [
       strip,
       el('span', {class: 'clip-label'}, [
         el('span', {class: 'clip-id', text: shot.number}),
@@ -822,8 +934,9 @@
   function renderLanes() {
     const t = timeline(), lanes = $('lanes'), track = $('track');
     if (!t) {
+      // 还没有时间线（旧格式）时主轨抬头只写编号，照样占住左侧一列，片段才与标尺的 0 秒对齐
       const main = mainLane();
-      main.replaceChildren(el('div', {class: 'lane-body'}, track));
+      main.replaceChildren(el('div', {class: 'lane-head'}, el('span', {class: 'lane-name', text: 'V1'})), el('div', {class: 'lane-body'}, track));
       lanes.replaceChildren(main);
       return;
     }
@@ -1084,6 +1197,7 @@
   }
 
   function selectMarker(id) {
+    picked.clear();
     state.timelineSel = {marker: true, id};
     markLaneSelection();
     syncDetail();
@@ -1118,6 +1232,10 @@
 
   function contextItems(event) {
     const target = event.target, editing = state.editing, here = () => seekAt(event.clientX);
+    const member = target.closest('.media-clip, .cue, .marker, #track > .clip');
+    if (member && grouped() && picked.has(pickKey(member))) {
+      return [{label: '删除选中的 ' + picked.size + ' 项', icon: icon('trash'), hint: 'Delete', pick: deleteGroup}];
+    }
     const markerItems = () => editing && !markersLocked() ? [{label: '在此处添加标记', icon: icon('marker'), hint: 'M', pick: () => { here(); addMarker(); }}] : [];
     const node = target.closest('.marker');
     if (node) {
@@ -1205,6 +1323,14 @@
     band.addEventListener('pointerdown', event => {
       if (event.button !== 0 || !layout.pps) return;
       const node = event.target.closest('.marker');
+      if (node && state.editing && multiKey(event)) { event.preventDefault(); togglePick(node); return; }
+      if (node && grouped() && picked.has(pickKey(node)) && !event.target.dataset.handle && !markersLocked()) {
+        event.preventDefault();
+        setPrimary(pickKey(node));
+        node.focus();
+        groupDrag(event, node, timeline().markers.find(item => item.id === node.dataset.marker), () => selectMarker(node.dataset.marker));
+        return;
+      }
       if (node) selectMarker(node.dataset.marker);
       else if (state.timelineSel && state.timelineSel.marker) { state.timelineSel = null; markLaneSelection(); syncDetail(); }
       if (!state.editing || markersLocked()) return;
@@ -1421,21 +1547,22 @@
   }
 
   function markLaneSelection() {
-    const sel = state.timelineSel;
+    const sel = state.timelineSel, group = grouped() ? picked : null;
     markSelection();
     for (const node of $('lanes').querySelectorAll('.media-clip, .cue')) {
-      const selected = Boolean(sel && !sel.marker && node.dataset.id === sel.id);
+      const selected = Boolean(sel && !sel.marker && node.dataset.id === sel.id || group && group.has(pickKey(node)));
       node.classList.toggle('is-selected', selected);
       node.setAttribute('aria-pressed', String(selected));
     }
     for (const node of $('marker-band').querySelectorAll('.marker')) {
-      const selected = Boolean(sel && sel.marker && node.dataset.marker === sel.id);
+      const selected = Boolean(sel && sel.marker && node.dataset.marker === sel.id || group && group.has(pickKey(node)));
       node.classList.toggle('is-selected', selected);
       node.setAttribute('aria-pressed', String(selected));
     }
   }
 
   function laneSelect(node) {
+    picked.clear();
     state.timelineSel = node ? {track: node.dataset.track, id: node.dataset.id} : null;
     markLaneSelection();
     syncDetail();
@@ -1459,6 +1586,7 @@
     to.push(JSON.stringify(state.working));
     state.working = JSON.parse(from.pop());
     state.dirty = true;
+    picked.clear();
     if (!shotById(state.selectedId)) state.selectedId = shots().length ? shots()[0].id : null;
     render();
     status(back ? '已撤销。' : '已重做。');
@@ -1511,6 +1639,7 @@
   }
 
   function deleteItem() {
+    if (grouped()) { deleteGroup(); return; }
     const marker = selectedMarker();
     if (marker) {
       if (markersLocked()) { status(LOCKED); return; }
@@ -1527,6 +1656,173 @@
       const list = found.kind === 'subtitle' ? found.track.cues : found.track.clips;
       list.splice(list.indexOf(found.item), 1);
       state.timelineSel = null;
+    });
+  }
+
+  /* ---------- 多选：Ctrl/Shift 点选逐个加减，在泳道空白处拖出方框框选 ----------
+     picked 里是成组的键：泳道条目 'L'+轨道+Tab+id，标记 'M'+id，主轨镜头 'S'+id；不足两个不算成组。
+     详情栏仍显示主选（timelineSel / selectedId）。成组时一起拖动、一起删除；只在解锁编辑时有效，锁定的行不受影响。 */
+  const picked = new Set();
+  const grouped = () => state.editing && picked.size > 1;
+  const multiKey = event => event.ctrlKey || event.metaKey || event.shiftKey;
+  const pickKey = node => node.classList.contains('marker') ? 'M' + node.dataset.marker
+    : node.classList.contains('clip') ? 'S' + node.dataset.id : 'L' + node.dataset.track + '\t' + node.dataset.id;
+
+  function primaryKey() {
+    const sel = state.timelineSel;
+    if (sel) return sel.marker ? 'M' + sel.id : 'L' + sel.track + '\t' + sel.id;
+    return plan().placed.some(item => item.shot.id === state.selectedId) ? 'S' + state.selectedId : null;
+  }
+
+  /* 只换主选，不散组。 */
+  function setPrimary(key) {
+    if (key[0] === 'S') { state.selectedId = key.slice(1); state.timelineSel = null; }
+    else if (key[0] === 'M') state.timelineSel = {marker: true, id: key.slice(1)};
+    else { const [track, id] = key.slice(1).split('\t'); state.timelineSel = {track, id}; }
+    markLaneSelection();
+    syncDetail();
+  }
+
+  function togglePick(node) {
+    const current = primaryKey(), key = pickKey(node);
+    if (!picked.size && current) picked.add(current);
+    if (!picked.has(key)) { picked.add(key); setPrimary(key); return; }
+    picked.delete(key);
+    if (!picked.size) { laneSelect(null); return; }
+    if (key === current) setPrimary([...picked].pop());
+    else markLaneSelection();
+  }
+
+  function groupMembers() {
+    const t = timeline(), out = {lane: [], markers: [], shots: [], locked: 0};
+    if (!t) return out;
+    for (const key of picked) {
+      if (key[0] === 'S') {
+        const shot = shotById(key.slice(1));
+        if (shot) { if (mainLocked()) out.locked++; else out.shots.push(shot); }
+      } else if (key[0] === 'M') {
+        const marker = t.markers.find(item => item.id === key.slice(1));
+        if (marker) { if (markersLocked()) out.locked++; else out.markers.push(marker); }
+      } else {
+        const [trackId, id] = key.slice(1).split('\t'), found = findTrack(trackId);
+        const item = found && found.items.find(entry => entry.id === id);
+        if (item) { if (found.track.locked) out.locked++; else out.lane.push({...found, item}); }
+      }
+    }
+    return out;
+  }
+
+  /* 成组删除：泳道条目与标记直接删掉；镜头是分镜表格的内容，只移除它关联的视频。 */
+  function deleteGroup() {
+    const {lane, markers, shots: list, locked} = groupMembers(), videos = list.map(mainClip).filter(Boolean);
+    const count = lane.length + markers.length + videos.length;
+    if (!count) { status(locked ? LOCKED : '选中的镜头没有关联视频。'); return; }
+    editLane('已删除 ' + count + ' 项' + (videos.length ? '，镜头只移除视频关联，素材文件不受影响' : '')
+      + (locked ? '；锁定的行没有改动。' : '。'), () => {
+      const t = timeline();
+      for (const {track, kind, item} of lane) {
+        const items = kind === 'subtitle' ? track.cues : track.clips;
+        items.splice(items.indexOf(item), 1);
+      }
+      for (const marker of markers) t.markers.splice(t.markers.indexOf(marker), 1);
+      for (const clip of videos) t.video[0].clips.splice(t.video[0].clips.indexOf(clip), 1);
+      picked.clear();
+      state.timelineSel = null;
+    });
+    renderDetail();
+  }
+
+  /* 成组拖动泳道条目与标记：全体平移同样的距离；按住的那个吸附，整体不越过 0 秒、不压到同一轨道里组外的条目。
+     没拖动就当普通点选（click），散组只选它。 */
+  function groupDrag(event, node, anchorItem, click) {
+    const {lane, markers} = groupMembers();
+    const entries = [
+      ...lane.map(({item, kind, items}) => ({item, kind, items, ...spanOf(item, kind), words: item.words || null})),
+      ...markers.map(marker => ({item: marker, kind: 'marker', start: marker.start_us, end: marker.end_us === null ? marker.start_us : marker.end_us}))
+    ];
+    const anchor = entries.find(entry => entry.item === anchorItem);
+    if (!anchor) { click(); return; }
+    const members = new Set(entries.map(entry => entry.item));
+    let min = -Infinity, max = Infinity;
+    for (const entry of entries) {
+      min = Math.max(min, -entry.start);
+      for (const other of entry.items || []) {
+        if (members.has(other)) continue;
+        const span = spanOf(other, entry.kind);
+        if (span.end <= entry.start) min = Math.max(min, span.end - entry.start);
+        else if (span.start >= entry.end) max = Math.min(max, span.start - entry.end);
+      }
+    }
+    const before = JSON.stringify(state.working), x = event.clientX, pps = layout.pps, targets = snapTargets(members);
+    let moved = false;
+    followPointer(node, event, move => {
+      if (!moved && Math.abs(move.clientX - x) < 2) return;
+      moved = true;
+      $('timeline').classList.add('is-dragging');
+      const start = settle(anchor.start + (move.clientX - x) / pps * US, [0, anchor.end - anchor.start], targets, pps);
+      const delta = Math.min(max, Math.max(min, start - anchor.start));
+      for (const entry of entries) {
+        const item = entry.item;
+        if (entry.kind === 'subtitle') {
+          Object.assign(item, {start_us: entry.start, end_us: entry.end, words: entry.words});
+          moveCue(item, entry.start + delta, entry.end + delta);
+        } else if (entry.kind === 'marker') {
+          item.start_us = entry.start + delta;
+          if (item.end_us !== null) item.end_us = entry.end + delta;
+        } else item.start_us = entry.start + delta;
+      }
+      layoutTimeline(pps);
+    }, () => {
+      showSnap(null);
+      $('timeline').classList.remove('is-dragging');
+      if (!moved) { click(); return; }
+      timeline().markers.sort((a, b) => a.start_us - b.start_us);
+      remember(before);
+      changed();
+      syncDetail(true);
+      status('已移动 ' + entries.length + ' 项。');
+    });
+  }
+
+  /* 框选：解锁后在泳道空白处按住拖出方框，碰到的条目、标记与主轨镜头成组；按住 Ctrl/Shift 时加进已有的组。
+     没拖动就是普通点击：散组，主轨空白处照旧移动播放头。 */
+  function setupMarquee() {
+    const lanes = $('lanes'), box = $('marquee');
+    lanes.addEventListener('pointerdown', event => {
+      if (!state.editing || event.button !== 0 || !layout.pps) return;
+      if (!event.target.classList.contains('lane-body') && event.target !== $('track')) return;
+      const x = event.clientX, y = event.clientY, add = multiKey(event);
+      const base = add ? [...(picked.size ? picked : [primaryKey()].filter(Boolean))] : [];
+      let moved = false;
+      followPointer(lanes, event, move => {
+        if (!moved && Math.hypot(move.clientX - x, move.clientY - y) < 4) return;
+        moved = true;
+        const left = Math.min(x, move.clientX), right = Math.max(x, move.clientX);
+        const top = Math.min(y, move.clientY), bottom = Math.max(y, move.clientY);
+        box.hidden = false;
+        Object.assign(box.style, {left: left + 'px', top: top + 'px', width: right - left + 'px', height: bottom - top + 'px'});
+        picked.clear();
+        for (const key of base) picked.add(key);
+        for (const node of [...lanes.querySelectorAll('.media-clip, .cue, #track > .clip'), ...$('marker-band').querySelectorAll('.marker')]) {
+          const rect = node.getBoundingClientRect();
+          if (rect.right > left && rect.left < right && rect.bottom > top && rect.top < bottom) picked.add(pickKey(node));
+        }
+        markLaneSelection();
+      }, () => {
+        box.hidden = true;
+        if (!moved) {
+          // 指针捕获在泳道上，click 不再落到主轨空白处，这里自己移动播放头
+          if (event.target === $('track')) seekAt(x);
+          if (!add && picked.size) { picked.clear(); markLaneSelection(); }
+          return;
+        }
+        suppressClick = true;
+        setTimeout(() => { suppressClick = false; });
+        const keys = [...picked];
+        if (keys.length === 1) picked.clear();
+        if (keys.length && !keys.includes(primaryKey())) setPrimary(keys[keys.length - 1]);
+        else markLaneSelection();
+      });
     });
   }
 
@@ -1554,9 +1850,17 @@
     lanes.addEventListener('pointerdown', event => {
       const node = event.target.closest('.media-clip, .cue');
       if (!state.editing || !node || event.button !== 0) return;
+      if (multiKey(event)) { event.preventDefault(); togglePick(node); return; }
       const found = findTrack(node.dataset.track);
       const item = found && found.items.find(entry => entry.id === node.dataset.id);
       if (!item) return;
+      if (grouped() && picked.has(pickKey(node)) && !event.target.dataset.handle) {
+        event.preventDefault();
+        setPrimary(pickKey(node));
+        node.focus();
+        groupDrag(event, node, item, () => laneSelect(node));
+        return;
+      }
       laneSelect(node);
       if (found.track.locked) return;
       const span = spanOf(item, found.kind);
@@ -1768,13 +2072,14 @@
     shots().forEach((shot, index) => { shot.number = prefix + String(index + 1).padStart(width, '0'); });
   }
 
-  /* 把镜头移到 beforeId 之前；beforeId 为 null 时放到最后一个已排布镜头之后。返回顺序是否变化。 */
-  function moveShot(id, beforeId) {
+  /* 把镜头（一个 id 或按顺序的一组）移到 beforeId 之前；beforeId 为 null 时放到最后一个已排布镜头之后。返回顺序是否变化。 */
+  function moveShot(ids, beforeId) {
     const list = shots(), order = list.map(shot => shot.id).join('\n');
-    const [shot] = list.splice(list.findIndex(item => item.id === id), 1);
+    const moving = list.filter(item => [].concat(ids).includes(item.id));
+    for (const shot of moving) list.splice(list.indexOf(shot), 1);
     const at = beforeId ? list.findIndex(item => item.id === beforeId)
       : list.reduce((last, item, index) => seconds(item) !== null ? index + 1 : last, 0);
-    list.splice(at, 0, shot);
+    list.splice(at, 0, ...moving);
     return list.map(item => item.id).join('\n') !== order;
   }
 
@@ -1791,22 +2096,50 @@
   }
 
   let dragging = null;
+  const inDrag = (drag, slot) => slot.node === drag.node || Boolean(drag.group && drag.group.has(slot.node.dataset.id));
 
+  /* 落点按拖动开始时各片段的原位置算（slots），让位动画移动片段后落点也不会来回跳。 */
   function dropTarget(event) {
     const track = $('track').getBoundingClientRect(), base = $('timeline').getBoundingClientRect();
     if (event.clientY < track.top - 48 || event.clientY > track.bottom + 48) return null;
-    const others = [...$('track').children].filter(node => node !== dragging.node);
-    const before = others.find(node => { const rect = node.getBoundingClientRect(); return event.clientX < rect.left + rect.width / 2; });
-    const edge = before ? before.getBoundingClientRect().left
-      : others.length ? others[others.length - 1].getBoundingClientRect().right : track.left;
-    return {beforeId: before ? before.dataset.id : null, x: edge - base.left};
+    const others = dragging.slots.filter(slot => !inDrag(dragging, slot)), x = event.clientX - track.left;
+    const before = others.find(slot => x < slot.left + slot.width / 2), last = others[others.length - 1];
+    const edge = before ? before.left : last ? last.left + last.width : 0;
+    return {beforeId: before ? before.node.dataset.id : null, x: edge + track.left - base.left};
+  }
+
+  /* 拖动排序时其他镜头先让出位置：按落点排出新顺序，各片段平移到新位置（CSS 过渡）；没有落点时回到原位。 */
+  function previewOrder(drag) {
+    const others = drag.slots.filter(slot => !inDrag(drag, slot)), mine = drag.slots.filter(slot => inDrag(drag, slot));
+    if (!mine.length || !drag.target) { for (const slot of drag.slots) if (slot.node !== drag.node) slot.node.style.translate = ''; return; }
+    const at = drag.target.beforeId ? others.findIndex(slot => slot.node.dataset.id === drag.target.beforeId) : others.length;
+    // 成组时组里的镜头排在一起，跟在按住的那个旁边
+    const order = [...others.slice(0, at), ...mine, ...others.slice(at)];
+    let x = drag.slots[0].left;
+    for (const slot of order) {
+      if (slot.node !== drag.node) slot.node.style.translate = Math.abs(x - slot.left) > 0.5 ? (x - slot.left) + 'px 0' : '';
+      x += slot.width;
+    }
+  }
+
+  /* 重排写回后片段是新节点：从松手前看到的位置滑到新位置。 */
+  function slideFrom(rects) {
+    if (reducedMotion()) return;
+    for (const node of $('track').children) {
+      const old = rects.get(node.dataset.id), now = node.getBoundingClientRect();
+      if (old && Math.abs(old.left - now.left) > 0.5) {
+        node.animate([{translate: (old.left - now.left) + 'px 0'}, {translate: '0 0'}], {duration: 220, easing: 'cubic-bezier(.2, .7, .2, 1)'});
+      }
+    }
   }
 
   function setupTimelineDrag() {
     const view = $('view-timeline');
     view.addEventListener('pointerdown', event => {
       const node = event.target.closest('.clip');
-      if (!state.editing || !node || event.button !== 0 || mainLocked()) return;
+      if (!state.editing || !node || event.button !== 0) return;
+      if (multiKey(event) && node.parentElement.id === 'track') { event.preventDefault(); togglePick(node); return; }
+      if (mainLocked()) return;
       const shot = shotById(node.dataset.id), {placed} = plan(), index = placed.findIndex(item => item.shot === shot);
       const resize = event.target.dataset.edge || null;
       const before = placed[index - 1] || null, cutAt = index >= 0 ? Math.round(placed[index].start * US) : 0;
@@ -1816,7 +2149,12 @@
         resize, pending: node.parentElement.id === 'pending-list', prev: before && before.shot,
         prevLength: before ? before.length : 0, cutAt, length: seconds(shot), original: shot.duration_seconds, pps: layout.pps,
         undo: JSON.stringify(state.working), link: resize ? linkSnapshot() : null,
-        targets: resize ? snapTargets(new Set()).filter(time => time < fixedEnd || !linkOn() && time > fixedEnd) : null};
+        group: !resize && grouped() && picked.has('S' + shot.id) ? new Set(groupMembers().shots.map(item => item.id)) : null,
+        targets: resize ? snapTargets(new Set()).filter(time => time < fixedEnd || !linkOn() && time > fixedEnd) : null,
+        slots: [...$('track').children].map(clipNode => {
+          const rect = clipNode.getBoundingClientRect();
+          return {node: clipNode, left: rect.left - $('track').getBoundingClientRect().left, width: rect.width};
+        })};
       node.setPointerCapture(event.pointerId);
       if (dragging.resize) event.preventDefault();
     });
@@ -1834,18 +2172,24 @@
       dragging.node.classList.add('is-dragging');
       dragging.node.style.translate = dx + 'px ' + (dragging.pending ? dy : 0) + 'px';
       dragging.target = dropTarget(event);
-      $('drop-mark').hidden = !dragging.target;
+      // 主轨上的镜头直接看到让位；从待排列表拖进来的才显示插入线
+      if (!dragging.pending) previewOrder(dragging);
+      $('drop-mark').hidden = !dragging.target || !dragging.pending;
       if (dragging.target) $('drop-mark').style.left = dragging.target.x + 'px';
     });
     const finish = commit => {
       if (!dragging) return;
-      const {node, shot, moved, resize, pending, target, undo} = dragging;
+      const {node, shot, moved, resize, pending, target, undo, group} = dragging;
       dragging = null;
       showSnap(null);
       $('drop-mark').hidden = true;
       $('timeline').classList.remove('is-dragging');
+      // 松手前看到的位置（含拖动与让位的平移），重排后从这里滑到新位置
+      const rects = new Map([...$('track').children].map(item => [item.dataset.id, item.getBoundingClientRect()]));
+      rects.set(shot.id, node.getBoundingClientRect());
       node.classList.remove('is-dragging');
       node.style.translate = '';
+      for (const item of $('track').children) item.style.translate = '';
       if (!moved) return;
       suppressClick = true;
       setTimeout(() => { suppressClick = false; });
@@ -1855,12 +2199,16 @@
         changed();
         return;
       }
-      if (!commit || !target) return;
+      if (!commit || !target) { slideFrom(rects); return; }
       const link = pending ? linkSnapshot() : null;
       if (pending) shot.duration_seconds = String(PLACE_SECONDS);
-      const reordered = moveShot(shot.id, target.beforeId);
+      const keep = [...picked];
+      const reordered = moveShot(group ? shots().filter(item => group.has(item.id)).map(item => item.id) : shot.id, target.beforeId);
       if (pending) applyLink(link);
       if (pending || reordered) { remember(undo); commitTimeline(shot.id, reordered); }
+      // 写回时 select 会散组；成组拖动后保留这一组
+      if (group) { for (const key of keep) picked.add(key); markLaneSelection(); }
+      slideFrom(rects);
     };
     view.addEventListener('pointerup', () => finish(true));
     view.addEventListener('pointercancel', () => finish(false));
@@ -1944,6 +2292,7 @@
   const media = {urls: new Map(), elements: new Map(), pending: new Set(), picking: null, request: 0, live: false};
 
   function mediaUrl(source) {
+    if (exported) return exported.base + encodeURI(source).replace(/#/g, '%23');
     if (!host) return 'preview-assets/' + encodeURIComponent(baseName(source));
     return media.urls.get(source);   // undefined：尚未解析；''：文件不存在或格式不支持
   }
@@ -2217,7 +2566,7 @@
       seekAt(event.clientX);
       followPointer($('ruler'), event, move => seekAt(move.clientX));
     });
-    $('track').addEventListener('click', event => { if (event.target === $('track')) seekAt(event.clientX); });
+    $('track').addEventListener('click', event => { if (event.target === $('track') && !suppressClick) seekAt(event.clientX); });
     new ResizeObserver(() => { sizeMonitor(); drawPreview(); }).observe($('monitor-stage'));
     // 时间线视图里空格总是播放或暂停，不再触发当前聚焦的按钮；文字输入、菜单与对话框除外。
     // 捕获阶段处理，先于按钮的默认动作与其他快捷键。
@@ -2450,14 +2799,19 @@
         checked: version.id === clip.id, icon: icon('film'), pick: () => useVersion(shot, version.id)})) : []),
       {label: clip ? '添加版本…' : '关联视频…', icon: icon('plus'), pick: () => pickVideo(shot)},
       clip ? {label: '用视频长度设为镜头时长', icon: icon('film'), pick: () => fitShotToVideo(shot)} : null,
-      clip ? {label: versions.length > 1 ? '移除全部版本' : '移除视频', icon: icon('trash'), pick: () => {
-        editLane(shot.number + ' 已移除视频关联；素材文件不受影响。', () => {
-          const clips = timeline().video[0].clips;
-          clips.splice(clips.indexOf(clip), 1);
-        });
-        renderDetail();
-      }} : null
+      clip ? {label: versions.length > 1 ? '移除全部版本' : '移除视频', icon: icon('trash'), hint: 'Delete', pick: () => removeVideo(shot)} : null
     ].filter(Boolean).map(item => Object.assign({checked: false}, item));
+  }
+
+  function removeVideo(shot) {
+    const clip = mainClip(shot);
+    if (!clip) return;
+    if (mainLocked()) { status(LOCKED); return; }
+    editLane(shot.number + ' 已移除视频关联；素材文件不受影响。', () => {
+      const clips = timeline().video[0].clips;
+      clips.splice(clips.indexOf(clip), 1);
+    });
+    renderDetail();
   }
 
   /* 镜头时长只精确到 0.1 秒：取不超过采用长度的 0.1 秒整，出点随之收齐，镜头格与视频正好等长。 */
@@ -2642,10 +2996,10 @@
   const rangeText = (start, end) => end === null ? round(start / US) + ' 秒' : round(start / US) + '–' + round(end / US) + ' 秒';
 
   /* 字幕与标记的文字框：只读与编辑共用；获得焦点时拍快照，失焦时若有改动就压进撤销栈。 */
-  function textField(id, title, value, onInput, locked) {
+  function textField(id, title, value, onInput, locked, placeholder) {
     let before = null;
     const editable = state.editing && !locked;
-    const input = el('textarea', {id, class: 'cell-input detail-text', 'aria-labelledby': id + '-title', spellcheck: 'false',
+    const input = el('textarea', {id, class: 'cell-input detail-text', 'aria-labelledby': id + '-title', spellcheck: 'false', placeholder,
       readonly: !editable, tabindex: editable ? null : '-1',
       onfocus: () => { before = JSON.stringify(state.working); },
       oninput: () => { onInput(input.value); changed(); },
@@ -2684,7 +3038,7 @@
         el('p', {class: 'label', text: (marker.end_us === null ? '标记' : '范围标记') + ' · ' + (marker.author === 'agent' ? 'Agent' : '用户')}),
         el('h2', {class: 'detail-id', id: 'detail-title', text: rangeText(marker.start_us, marker.end_us)})
       ]),
-      textField('f-marker', '说明', marker.text, value => { marker.text = value; }, markersLocked())
+      textField('f-marker', '说明', marker.text, value => { marker.text = value; }, markersLocked(), '添加说明…')
     ];
   }
 
@@ -2719,7 +3073,8 @@
   function markSelection() {
     // 只管表格行与镜头片段；选中了泳道条目或标记时，时间线上的镜头让出高亮，避免两处同时亮着
     for (const node of document.querySelectorAll('tr[data-id], .clip[data-id]')) {
-      const selected = node.dataset.id === state.selectedId && (node.tagName === 'TR' || !state.timelineSel);
+      const selected = node.dataset.id === state.selectedId && (node.tagName === 'TR' || !state.timelineSel)
+        || node.tagName !== 'TR' && grouped() && picked.has('S' + node.dataset.id);
       if (node.tagName === 'TR') {
         node.setAttribute('aria-selected', String(selected));
         const number = node.querySelector('.cell-number');
@@ -2732,8 +3087,9 @@
   }
 
   function select(id, focus) {
-    const fromLane = Boolean(state.timelineSel);
-    if (!shotById(id) || id === state.selectedId && !focus && !fromLane) return;
+    const fromLane = Boolean(state.timelineSel), hadGroup = picked.size > 0;
+    picked.clear();
+    if (!shotById(id) || id === state.selectedId && !focus && !fromLane) { if (hadGroup) markLaneSelection(); return; }
     const changedShot = id !== state.selectedId || fromLane;
     state.selectedId = id;
     state.timelineSel = null;
@@ -2912,10 +3268,10 @@
       stopVideo();
       img.hidden = Boolean(clip);
       if (clip) {
-        range = {from: clip.in_us / US, to: clip.out_us / US};
+        // 悬停预览整个视频文件，方便看清这个版本的全部内容
+        range = {from: 0, to: Infinity};
         video.hidden = false;
         video.src = mediaUrl(clip.source);
-        video.currentTime = range.from;
         video.play().catch(() => {});
       } else img.src = thumbUrl(shot ? shot.thumbnail : asset.path) || '';
       $('peek-id').textContent = shot ? shot.number : asset.id;
@@ -2931,7 +3287,7 @@
       anchor = null; peek.hidden = true;
       stopVideo();
     };
-    // 只在采用范围内循环：到出点（或文件结尾）就回到入点
+    // 播到范围终点（整个文件时即文件结尾）就从头循环
     const loop = () => { if (range) { video.currentTime = range.from; video.play().catch(() => {}); } };
     video.addEventListener('timeupdate', () => { if (range && video.currentTime >= range.to) loop(); });
     video.addEventListener('ended', loop);
@@ -2967,14 +3323,14 @@
   }
 
   function setupDialog() {
-    for (const dialog of [$('confirm-dialog'), $('external-dialog')]) dialog.addEventListener('click', event => {
+    for (const dialog of [$('confirm-dialog'), $('external-dialog'), $('video-dialog')]) dialog.addEventListener('click', event => {
       const choice = event.target.closest('[data-choice]');
       if (choice) dialog.close(choice.dataset.choice);
     });
   }
 
   /* ---------- 编辑与保存 ---------- */
-  function canEdit() { return state.doc.status !== 'final' && state.doc.confirmation !== 'confirmed'; }
+  function canEdit() { return !exported && state.doc.status !== 'final' && state.doc.confirmation !== 'confirmed'; }
 
   function status(message) {
     const node = $('status');
@@ -3364,6 +3720,11 @@
         return;
       }
       if (!event.target.classList.contains('clip')) return;
+      if ((event.key === 'Delete' || event.key === 'Backspace') && state.editing && event.target.parentElement.id === 'track') {
+        event.preventDefault();
+        if (grouped()) deleteGroup(); else removeVideo(shotById(event.target.dataset.id));
+        return;
+      }
       if (nudgeClip(event)) { event.preventDefault(); return; }
       const delta = {ArrowRight: 1, ArrowLeft: -1}[event.key];
       if (delta) { event.preventDefault(); moveSelection(delta); }
@@ -3391,6 +3752,7 @@
       else if (data.type === 'mediaUrls') onMediaUrls(data.urls);
       else if (data.type === 'subtitlePicked') onSubtitlePicked(data);
       else if (data.type === 'external') onExternal(data);
+      else if (data.type === 'exportResult') onExportResult(data);
     });
   }
 
@@ -3404,6 +3766,7 @@
   setupTimelineDrag();
   setupLaneDrag();
   setupMarkers();
+  setupMarquee();
   setupEditToggles();
   setupContextMenu();
   setupTimelineView();
@@ -3411,11 +3774,15 @@
   setupAspect();
   setupHelp();
   setupEvents();
-  // 旧文件的时长按 0.1 秒规整后显示。只读时不算未保存（关窗口不需要保存，也不会被保存卡住）；解锁后差异才算未保存，保存时写回
-  const normalized = canEdit() ? normalizeDurations(state.working) : 0;
+  $('export-trigger').addEventListener('click', event => openExportMenu(event.currentTarget));
+  // 导出的只读页面：不能解锁、保存或再导出
+  if (exported) for (const id of ['edit-toggle', 'save', 'export-trigger']) $(id).hidden = true;
+  // 旧文件的时长按 0.1 秒规整后显示（导出的只读页面同样规整，它不会保存）。只读时不算未保存（关窗口不需要保存，也不会被保存卡住）；解锁后差异才算未保存，保存时写回
+  const normalized = canEdit() || exported ? normalizeDurations(state.working) : 0;
   seedDurations();
   render();
-  status(!canEdit() ? '这是已确认或定稿的版本，只能查看。'
+  status(exported ? '只读交接页面：内容是导出时已保存的规格，不会随规格同步。'
+    : !canEdit() ? '这是已确认或定稿的版本，只能查看。'
     : normalized ? '有 ' + normalized + ' 个镜头的时长已按 0.1 秒规整显示（按累计切点取整，总长不变）；文件尚未改动，解锁编辑并保存后才写回。'
     : '只读查看中。需要修改时点击“解锁编辑”。');
   if (host) { host.postMessage({type: 'ready'}); media.live = true; resolveMedia(); }

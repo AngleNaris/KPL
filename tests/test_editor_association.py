@@ -53,6 +53,26 @@ class OwnershipTests(unittest.TestCase):
         self.assertEqual(editor_ready.classify(info, r'PC\user', Path('C:/new.exe')), 'protected_choice')
 
 
+class AccountTests(unittest.TestCase):
+    def test_chinese_account_defaults_to_session_desktop_user(self):
+        info = {'account': '电脑\\张三', 'desktop_account': '电脑\\张三', 'exe': True, 'core': True, 'loader': True,
+                'dotnet': True, 'webview': True, 'user_choice': None, 'user_choice_present': False,
+                'association_records': False, 'effective_command': None, 'inspection_error': None}
+        exe = Path('C:/new.exe')
+        self.assertEqual(editor_ready.classify(info, None, exe), 'needs_setup')
+        # 隔离账户：运行脚本的账户与桌面用户不同；会话里没有桌面用户时要求指明
+        self.assertEqual(editor_ready.classify({**info, 'account': '电脑\\sandbox'}, None, exe), 'wrong_user_context')
+        self.assertEqual(editor_ready.classify({**info, 'desktop_account': None}, None, exe), 'target_account_required')
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows account APIs')
+    def test_account_apis_work_in_utf8_mode(self):
+        # 曾经解析 whoami 的控制台输出：UTF-8 模式下中文用户名会解码失败
+        code = 'import editor_ready as e; a = e.current_account(); print(bool(a) and "\\\\" in a)'
+        result = subprocess.run([sys.executable, '-X', 'utf8', '-c', code], cwd=ROOT / 'scripts',
+                                capture_output=True, text=True, encoding='utf-8')
+        self.assertEqual(result.stdout.strip(), 'True', result.stderr)
+
+
 class PlanningTests(unittest.TestCase):
     def setUp(self):
         self.old = str(Path('C:/synthetic/old editor.exe').absolute())

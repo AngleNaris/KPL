@@ -54,7 +54,7 @@ def init(root, spec_format='kpldoc'):
     machine.mkdir()
     for name in MACHINE_DIRS:
         (machine / name).mkdir()
-    spec = root / paths.USER_DIRS[0] / ('01_项目规格_v001_draft.' + spec_format)
+    spec = root / paths.USER_DIRS[0] / ('01_项目规格.' + spec_format)
     model = html_spec.new_model(root.name)
     payload = (json.dumps(model, ensure_ascii=False, indent=2, allow_nan=False) + '\n'
                if spec_format == 'kpldoc' else html_spec.build(model))
@@ -114,7 +114,7 @@ def inspect(root):
                 kind = 'directory'
             else:
                 parsed = paths.file_parts(name)
-                valid = parsed is not None
+                valid = parsed is not None or (relative.startswith(paths.USER_DIRS[0] + '/') and paths.spec_name(name))
                 kind = 'file'
                 if item.suffix.lower() == '.md':
                     issues.append({'path': relative, 'issue': 'user_document_markdown'})
@@ -148,7 +148,7 @@ def selected_spec(root, marker):
     if not isinstance(selected, dict) or not isinstance(selected.get('path'), str):
         raise ValueError('未明确选择当前规格。')
     spec = paths.ensure_beneath(root, selected['path'])
-    if (not spec.is_relative_to(root / paths.USER_DIRS[0]) or paths.file_parts(spec.name) is None
+    if (not spec.is_relative_to(root / paths.USER_DIRS[0]) or not paths.spec_name(spec.name)
             or spec.suffix.lower() not in {'.html', '.kpldoc', '.md'}):
         raise ValueError('当前规格须位于项目说明区；支持 .kpldoc、HTML 和只读旧 Markdown。')
     if not spec.is_file() or sha(spec) != selected.get('sha256'):
@@ -156,10 +156,7 @@ def selected_spec(root, marker):
     if spec.suffix.lower() in {'.html', '.kpldoc'}:
         if spec.suffix.lower() == '.html' and html_spec.is_view_only(spec):
             raise ValueError('只读导出副本不能作为当前规格；请选择实际源文件。')
-        model = html_spec.load_document(spec)
-        name = paths.file_parts(spec.name)
-        if model['version'] != 'v' + name['version'] or model['status'] != name['status']:
-            raise ValueError('规格内版本/状态与文件名不一致；不能猜测确认。')
+        html_spec.load_document(spec)
     return spec
 
 
@@ -169,14 +166,12 @@ def select_spec(root, relative, basis):
         raise ValueError('必须提供明确的版本选择依据。')
     candidate = paths.ensure_beneath(root, relative)
     if (not candidate.is_file() or not candidate.is_relative_to(root / paths.USER_DIRS[0])
-            or paths.file_parts(candidate.name) is None or candidate.suffix.lower() not in {'.html', '.kpldoc'}):
+            or not paths.spec_name(candidate.name) or candidate.suffix.lower() not in {'.html', '.kpldoc'}):
         raise ValueError('所选规格须是项目说明目录中的规范命名 .kpldoc 或 HTML；旧 Markdown 只读兼容。')
     if candidate.suffix.lower() == '.html' and html_spec.is_view_only(candidate):
         raise ValueError('只读导出副本不能作为当前规格；请选择实际源文件。')
-    model = html_spec.load_document(candidate)
-    name = paths.file_parts(candidate.name)
-    if model['version'] != 'v' + name['version'] or model['status'] != name['status']:
-        raise ValueError('规格内版本/状态与文件名不一致；不能猜测确认。')
+    # 版本与状态以文档内部为准；旧项目文件名里的版本可能落后，不据此拒绝或另建文件
+    html_spec.load_document(candidate)
     marker_path = paths.ensure_beneath(root, '.kpl/project.json')
     lock_path = paths.ensure_beneath(root, '.kpl/selection.lock')
     fd = os.open(str(lock_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

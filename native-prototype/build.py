@@ -45,7 +45,8 @@ def template():
     html = replace_marked(html, '<!--KPL_STYLE_START-->', '<!--KPL_STYLE_END-->', '<style>' + css + '</style>')
     html = replace_marked(html, '<!--KPL_DATA_START-->', '<!--KPL_DATA_END-->',
         '<script type="application/json" id="kpl-authoritative-data">__KPL_NATIVE_DATA_PLACEHOLDER__</script>'
-        '<script type="application/json" id="kpl-prefs">__KPL_NATIVE_PREFS_PLACEHOLDER__</script>')
+        '<script type="application/json" id="kpl-prefs">__KPL_NATIVE_PREFS_PLACEHOLDER__</script>'
+        '<script type="application/json" id="kpl-export">null</script>')
     return replace_marked(html, '<!--KPL_SCRIPT_START-->', '<!--KPL_SCRIPT_END-->', '<script>' + app + '</script>')
 
 
@@ -72,7 +73,7 @@ def main(argv=None):
             '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll', '/reference:System.Web.Extensions.dll',
             '/resource:' + str(resource) + ',KplNativeTemplate',
             '/resource:' + str(ICON) + ',KplIcon',
-            str(HERE / 'src' / 'Host.cs'), str(HERE / 'src' / 'Media.cs'), str(HERE / 'src' / 'Subtitle.cs'),
+            str(HERE / 'src' / 'Host.cs'), str(HERE / 'src' / 'Media.cs'), str(HERE / 'src' / 'Subtitle.cs'), str(HERE / 'src' / 'Export.cs'), str(HERE / 'src' / 'VideoExport.cs'),
             str(HERE / 'src' / 'DocumentSession.cs')]
         subprocess.run(command, check=True)
     shutil.copy2(args.core, out / 'Microsoft.Web.WebView2.Core.dll')

@@ -124,6 +124,34 @@ class NativeProjectTests(unittest.TestCase):
             {'target': 'shot', 'id': 'stable-a', 'field': 'video_prompt', 'old': good, 'new': good.replace('4-10秒', '4-12秒')}])
         self.assertEqual(rc, 0, result)
 
+    def test_single_spec_file_changes_state_in_place(self):
+        self.assertEqual(self.spec.name, '01_项目规格.kpldoc')
+        state = lambda status, confirmation: {'status': status, 'confirmation': confirmation}
+        rc, error = self.apply([{'target': 'project', 'action': 'state', 'old': state('draft', 'unconfirmed'),
+                                 'new': state('final', 'confirmed')}])
+        self.assertNotEqual(rc, 0, error)   # 没有用户授权来源
+        rc, result = self.apply([{'target': 'project', 'action': 'state', 'old': state('draft', 'unconfirmed'),
+                                  'new': state('final', 'confirmed'), 'authorization_ref': '用户在对话中确认定稿'}])
+        self.assertEqual(rc, 0, result)
+        self.assertEqual(self.reselect()[0], 0)   # 文件名不带版本，状态变了照样能选
+        rc, error = self.apply([{'target': 'project', 'field': 'summary', 'old': '', 'new': '定稿后直接改'}])
+        self.assertNotEqual(rc, 0, error)
+        rc, result = self.apply([{'target': 'project', 'action': 'state', 'old': state('final', 'confirmed'),
+                                  'new': state('draft', 'unconfirmed'), 'authorization_ref': '用户要求修改定稿'}])
+        self.assertEqual(rc, 0, result)
+        model = html_spec.load_document(self.spec)
+        self.assertEqual((model['version'], model['status'], model['confirmation']), ('v002', 'draft', 'unconfirmed'))
+        self.assertEqual(len(list((self.root / '01_项目说明').glob('*'))), 1)
+
+    def test_content_is_limited_to_thirty_units(self):
+        shot = html_spec.new_shot('stable-a', 'S01')
+        shot.update(content='一' * 31)
+        rc, error = self.apply([{'target': 'shot', 'id': 'stable-a', 'action': 'add', 'old': None, 'new': shot}])
+        self.assertNotEqual(rc, 0, error)
+        shot.update(content='A chef stirs noodles, steam rising. ' * 4)   # 24 个英文单词，标点不计
+        rc, result = self.apply([{'target': 'shot', 'id': 'stable-a', 'action': 'add', 'old': None, 'new': shot}])
+        self.assertEqual(rc, 0, result)
+
     def test_read_only_export_cannot_be_selected_as_another_authority(self):
         export = self.root / '01_项目说明/02_查看副本_v001_draft.html'
         result = subprocess.run([sys.executable, str(ROOT / 'native-prototype/native_doc.py'),
@@ -289,7 +317,7 @@ class NativeCSharpTests(unittest.TestCase):
     def test_host_thumbnails_and_prefs_merge(self):
         core = ROOT / 'native-prototype/bin/win-x64/Microsoft.Web.WebView2.Core.dll'
         shutil.copy2(core, self.dir)
-        result = self.compile_and_run('HostTests', ['native-prototype/src/Host.cs', 'native-prototype/src/Media.cs', 'native-prototype/src/Subtitle.cs', 'native-prototype/src/DocumentSession.cs', 'native-prototype/tests/HostTests.cs'],
+        result = self.compile_and_run('HostTests', ['native-prototype/src/Host.cs', 'native-prototype/src/Media.cs', 'native-prototype/src/Subtitle.cs', 'native-prototype/src/Export.cs', 'native-prototype/src/VideoExport.cs', 'native-prototype/src/DocumentSession.cs', 'native-prototype/tests/HostTests.cs'],
                                       [str(core), 'System.Windows.Forms.dll', 'System.Drawing.dll', 'System.Web.Extensions.dll'],
                                       main='HostTests', arg=self.dir / 'work')
         self.assertEqual(result.returncode, 0, result.stderr.decode('utf-8', 'replace'))

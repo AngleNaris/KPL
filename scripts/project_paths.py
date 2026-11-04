@@ -12,6 +12,9 @@ FILE_RE = re.compile(r'(?P<number>0[1-9]|[1-9][0-9])_(?P<name>[\u3400-\u9fff]+)'
                      r'_v(?P<version>[0-9]{3})_(?P<status>draft|review|final)'
                      r'\.(?P<ext>[A-Za-z0-9]{1,10})\Z')
 DIR_RE = re.compile(r'(?:0[1-9]|[1-9][0-9])_[\u3400-\u9fff]+\Z')
+# 项目规格是唯一的一个文件，原地更新：文件名不带版本与状态（如 01_项目规格.kpldoc），版本与状态只记在文档内部。
+# 旧项目带版本的规格名照样有效，但同样原地更新，不再另建新文件。
+SPEC_RE = re.compile(r'(?:0[1-9]|[1-9][0-9])_[\u3400-\u9fff]+\.(?:kpldoc|html)\Z')
 
 
 def file_parts(name):
@@ -19,6 +22,10 @@ def file_parts(name):
         return None
     match = FILE_RE.fullmatch(name)
     return match if match and match['version'] != '000' and match['page'] != '000' else None
+
+
+def spec_name(name):
+    return isinstance(name, str) and (SPEC_RE.fullmatch(name) is not None or file_parts(name) is not None)
 
 
 def ensure_beneath(root, relative, *, directory=False):

@@ -207,6 +207,8 @@ kbd {
 .cell-input[readonly] { pointer-events: none; }
 .cell-input.mono { font-family: var(--font-mono); }
 .cell-input::placeholder { color: var(--warning); opacity: 1; }
+.detail-text::placeholder { color: var(--text-3); }
+.cell-input.is-over { color: var(--warning); }
 textarea.cell-input { resize: none; field-sizing: content; overflow: hidden; }
 .cell-number { font-weight: 600; font-variant-numeric: tabular-nums; }
 .cell-dur { display: inline-block; inline-size: auto; min-inline-size: 1ch; field-sizing: content; text-align: end; font-variant-numeric: tabular-nums; }
@@ -452,6 +454,7 @@ textarea.cell-input { resize: none; field-sizing: content; overflow: hidden; }
   transition: opacity var(--dur-fast) var(--ease);
 }
 .clip:hover .clip-handle, .clip:focus-visible .clip-handle, .timeline.is-dragging .clip-handle { opacity: 1; }
+.timeline.is-dragging .track .clip:not(.is-dragging) { transition: translate 180ms var(--ease); }
 .clip.is-dragging { z-index: 2; cursor: grabbing; opacity: 0.85; box-shadow: 0 8px 24px var(--shadow); transition: none; }
 .timeline.is-dragging, .timeline.is-dragging * { cursor: grabbing; user-select: none; }
 /* 标尺与分隔条的按住拖动：期间整页不可选中文字 */
@@ -468,6 +471,9 @@ html.is-scrubbing, html.is-scrubbing * { user-select: none; }
 /* 吸附线：拖动时贴上的那个时间点 */
 .snap-line { position: absolute; inset-block: 0; inline-size: 0; pointer-events: none; z-index: 3; border-inline-start: 1px dashed var(--accent); }
 .snap-line[hidden] { display: none; }
+/* 框选方框：跟随指针，按屏幕坐标定位 */
+.marquee { position: fixed; z-index: 20; pointer-events: none; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.marquee[hidden] { display: none; }
 .tool-toggle[aria-pressed="true"] { color: var(--accent); }
 .tool-toggle[aria-pressed="true"]:hover { color: var(--accent); }
 /* 锁定的行：条目变淡、不能拖动；开关与选中照常 */
@@ -545,7 +551,8 @@ html.is-scrubbing, html.is-scrubbing * { user-select: none; }
 .rich { white-space: pre-wrap; overflow-wrap: anywhere; line-height: var(--lh-body); min-block-size: calc(1em * var(--lh-body)); }
 .rich:empty::before { content: "未填写"; color: var(--text-3); }
 .block:has(.rich:focus-visible) .block-title { color: var(--accent); }
-.tok-ref { color: var(--accent); background: var(--accent-tint); }
+.tok-ref { color: var(--accent); background: var(--accent-tint); user-select: none; }
+.tok-ref::before { content: attr(data-label); }
 .tok-ref[role="button"] { cursor: pointer; }
 .tok-ref[role="button"]:hover { text-decoration: underline; text-underline-offset: 3px; }
 .tok-missing { color: var(--warning); text-decoration: underline dashed; text-underline-offset: 3px; }
@@ -805,6 +812,21 @@ tr.is-gone > td { text-decoration: line-through; }
 }
 .dialog-title { font-size: var(--fs-title); font-weight: 600; margin-block-end: var(--space-2); }
 .dialog p { color: var(--text-2); }
+/* 导出视频：格式、分辨率、帧率都是一行可点选的小块 */
+.export-field { display: grid; gap: var(--space-2); margin: var(--space-4) 0 0; padding: 0; border: 0; min-inline-size: 0; }
+.export-field:disabled { opacity: .4; }
+.chips { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.chip { position: relative; }
+.chip input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.chip span {
+  display: inline-flex; align-items: center; min-block-size: 28px; padding-inline: var(--space-3);
+  border: var(--hair) solid var(--line); font: var(--fs-small) var(--font-mono); font-variant-numeric: tabular-nums;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.chip input:hover + span { background: var(--hover); }
+.chip input:checked + span { background: var(--accent-tint-strong); border-color: var(--accent); }
+.chip input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chip input:disabled { cursor: default; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-block-start: var(--space-5); }
 
 @keyframes fx-fade-in { from { opacity: 0; translate: 0 4px; } }

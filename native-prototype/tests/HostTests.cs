@@ -75,7 +75,23 @@ internal static class HostTests
             Check(EditorWindow.MediaPath(@"D:\素材 A\S01 #1.mp4") == "https://drive-d.kpl-media.local/%E7%B4%A0%E6%9D%90%20A/S01%20%231.mp4",
                 "media url " + EditorWindow.MediaPath(@"D:\素材 A\S01 #1.mp4"));
 
-            Console.WriteLine("PASS: " + assertions + " thumbnail / prefs / media path assertions");
+            // 导出视频：镜头按顺序排；有视频的用视频，否则用参考画面；静音轨不进混音；声音时间戳归零后再补齐总长
+            var model = (Dictionary<string, object>)JsonTools.Serializer().DeserializeObject(
+                "{\"shots\":[{\"id\":\"S01\",\"duration_seconds\":\"2\",\"thumbnail\":\"a.png\"},{\"id\":\"S02\",\"duration_seconds\":\"3\",\"thumbnail\":\"\"}," +
+                "{\"id\":\"S03\",\"duration_seconds\":\"\",\"thumbnail\":\"a.png\"}]," +
+                "\"timeline\":{\"video\":[{\"id\":\"V1\",\"clips\":[{\"shot_id\":\"S02\",\"source\":\"../07_预演交付/S01 #1.mp4\",\"in_us\":500000,\"out_us\":9000000,\"audio\":true}]}]," +
+                "\"audio\":[{\"id\":\"A1\",\"muted\":true,\"gain\":1,\"clips\":[{\"source\":\"../07_预演交付/S01 #1.mp4\",\"start_us\":0,\"in_us\":0,\"out_us\":1000000}]}]}}");
+            ExportPlan plan = EditorWindow.PlanExport(model, docDir, path => path == "a.png" ? source : null);
+            Check(plan.Missing.Count == 0 && plan.Total == 5, "export total " + plan.Total);
+            Check(plan.Video.Count == 2 && plan.Video[0].Image && plan.Video[1].Start == 2 && plan.Video[1].In == 0.5 && plan.Video[1].Length == 3,
+                "export video segments");
+            Check(plan.Audio.Count == 1 && plan.Audio[0].Start == 2, "muted track mixed or shot audio misplaced");
+            var inputs = new List<string>();
+            string graph = EditorWindow.BuildGraph(plan, 1280, 720, "25", true, inputs);
+            Check(inputs.Count == 8 + 6 + 6 && graph.Contains("asetpts=N/SR/TB,apad,atrim=0:5[aout]") && graph.Contains("adelay=2000:all=1"),
+                "export graph " + graph);
+
+            Console.WriteLine("PASS: " + assertions + " thumbnail / prefs / media path / export assertions");
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine(ex.ToString()); return 1; }
