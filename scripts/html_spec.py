@@ -47,7 +47,8 @@ MARKS = {'': '未标记', 'done': '完成', 'revise': '待修改', 'wip': '进�
 ASSET_DIR = '../05_参考资产/'
 # 描述与提示词中的分段标记 {类别:内容}；只读视图只显示内容（格式见 references/spec-format.md）
 DESCRIPTION_LIMIT = 300
-SEGMENT = re.compile(r'\{(?:镜头|风格|场景|动态)[:：]((?:@\{[^{}]*\}|[^{}])*)\}')
+SEGMENTED_FIELDS = ('description', 'prompt', 'video_prompt')
+SEGMENT = re.compile(r'\{(?:镜头|风格|场景|动态|约束)[:：]((?:@\{[^{}]*\}|[^{}])*)\}')
 HERE = Path(__file__).resolve().parent.parent
 APP = HERE / 'assets' / 'user-spec.js'
 
@@ -301,6 +302,14 @@ def json_for_script(model):
 
 def plain_text(value):
     return SEGMENT.sub(r'\1', value)
+
+
+def check_segments(label, value):
+    """Agent 写入的描述与提示词：每个非空行恰好是一个完整分段，行外不留未分类的文字。"""
+    for number, line in enumerate(value.split('\n'), 1):
+        if line.strip() and not SEGMENT.fullmatch(line.strip()):
+            raise ValueError('%s line %d must be exactly one {镜头|风格|场景|动态|约束:内容} segment, one segment per line, '
+                             'with no untagged text: %s' % (label, number, line.strip()[:60]))
 
 
 def human(value):
@@ -578,6 +587,10 @@ def _apply_changes_locked(root, relative, expected, patch):
                     and (not isinstance(operation.get('authorization_ref'), str)
                          or not operation['authorization_ref'].strip())):
                 raise ValueError('a new user mark needs its explicit authorization source')
+            if kind == 'shot':
+                for field in SEGMENTED_FIELDS:
+                    if isinstance(row.get(field), str):
+                        check_segments(ident + ' ' + field, row[field])
             rows.append(row)
         elif action == 'remove':
             if operation.get('deletion_authorized') is not True or not isinstance(operation.get('authorization_ref'), str) or not operation['authorization_ref'].strip():
@@ -596,6 +609,8 @@ def _apply_changes_locked(root, relative, expected, patch):
             if (len(matches) != 1 or field not in fields or not kind_ok(operation.get('old'))
                     or not kind_ok(operation.get('new')) or matches[0][field] != operation['old']):
                 raise ValueError(kind + ' field changed or is invalid')
+            if kind == 'shot' and field in SEGMENTED_FIELDS and operation['new'] != operation['old']:
+                check_segments(ident + ' ' + field, operation['new'])
             matches[0][field] = operation['new']
         else:
             raise ValueError('unsupported ' + kind + ' operation')

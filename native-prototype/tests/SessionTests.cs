@@ -40,6 +40,11 @@ internal static class SessionTests
             byte[] before = File.ReadAllBytes(file);
             Check(reopened.Save(Next(reopened, "旧窗口不应覆盖"), null) == "conflict", "stale second session not blocked");
             Check(Convert.ToBase64String(before) == Convert.ToBase64String(File.ReadAllBytes(file)), "conflict changed bytes");
+            // 外部改动：自己刚保存的不回推；落后的窗口读入新内容后不再重复报告
+            Check(first.ReloadIfChanged() == null, "own save reported as external change");
+            var external = reopened.ReloadIfChanged();
+            Check(external != null && (string)external["title"] == "再次保存", "external change not reloaded");
+            Check(reopened.ReloadIfChanged() == null, "same external change reported twice");
             var rejected = Next(current, "不应写入"); rejected["document_id"] = "different";
             Check(current.Save(rejected, null) == "identity_changed", "identity change allowed");
             rejected = Next(current, "不应写入"); rejected["revision"] = 99;
@@ -49,6 +54,10 @@ internal static class SessionTests
             File.WriteAllText(lockedPath, JsonTools.Serializer().Serialize(locked), new UTF8Encoding(false));
             var lockedSession = new DocumentSession(lockedPath);
             Check(lockedSession.Save(Next(lockedSession, "locked"), null) == "locked", "final changed");
+            File.WriteAllText(lockedPath, "{\"schema\":", new UTF8Encoding(false));
+            bool brokenRejected = false;
+            try { lockedSession.ReloadIfChanged(); } catch (Exception) { brokenRejected = true; }
+            Check(brokenRejected, "unparseable external change accepted");
             File.SetAttributes(file, File.GetAttributes(file) | FileAttributes.ReadOnly);
             try { Check(current.Save(Next(current, "只读"), null) == "read_only", "readonly changed"); }
             finally { File.SetAttributes(file, File.GetAttributes(file) & ~FileAttributes.ReadOnly); }

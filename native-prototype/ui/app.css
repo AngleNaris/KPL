@@ -554,6 +554,7 @@ html.is-scrubbing, html.is-scrubbing * { user-select: none; }
 .seg:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
 .seg-camera { color: var(--seg-camera); } .seg-style { color: var(--seg-style); }
 .seg-scene { color: var(--seg-scene); } .seg-action { color: var(--seg-action); }
+.seg-constraint { color: var(--seg-constraint); }
 /* 右键菜单里的类别色块；“清除类别”只有边框 */
 .seg-swatch { inline-size: 12px; block-size: 12px; flex: none; background: currentColor; }
 .seg-swatch.is-none { background: transparent; box-shadow: inset 0 0 0 var(--hair) var(--line); }

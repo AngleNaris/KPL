@@ -64,12 +64,13 @@
   --mark-question: var(--info);
   --mark-hold: var(--text-3);
 
-  /* 描述/提示词分段染色：镜头、风格（含光线色彩）、场景、动态。刻意低饱和，只有素材引用用强调色；
+  /* 描述/提示词分段染色：镜头、风格（含光线色彩）、场景、动态、约束（留空与排除）。刻意低饱和，只有素材引用用强调色；
      文字色对 surface 与 sunken 均 >= 4.5:1 */
   --seg-camera: light-dark(#455569, #A4B3C6);
   --seg-style: light-dark(#684D61, #C6AFC0);
   --seg-scene: light-dark(#4A5C44, #AFC1A6);
   --seg-action: light-dark(#66543A, #CDBB9F);
+  --seg-constraint: light-dark(#5A5A5A, #B4B4B4);
 
   /* 动效：所有进入都有对应的退出 */
   --dur-fast: 120ms;

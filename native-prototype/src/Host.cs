@@ -45,6 +45,10 @@ internal sealed partial class EditorWindow : Form
     internal const string AppVersion = "0.1.0";
     private const string RepoUrl = "https://github.com/AngleNaris/KPL", LatestApi = "https://api.github.com/repos/AngleNaris/KPL/releases/latest";
     private readonly Timer loadTimer = new Timer { Interval = 15000 };
+    // 文档被外部改动后等 300 毫秒再读，合并连续的写入事件；读不到时最多重试 20 次
+    private readonly Timer reloadTimer = new Timer { Interval = 300 };
+    private FileSystemWatcher watcher;
+    private int reloadRetries;
     internal bool Ready { get { return loaded; } }
 
     internal EditorWindow(DocumentSession current)
@@ -69,10 +73,11 @@ internal sealed partial class EditorWindow : Form
         };
         profile = Path.Combine(Path.GetTempPath(), "kpl-webview-" + Guid.NewGuid().ToString("N"));
         Shown += Start;
+        reloadTimer.Tick += delegate { ReloadDocument(); };
         loadTimer.Tick += delegate { loadTimer.Stop(); if (!loaded) MessageBox.Show("编辑器加载超时；原文件未被修改。请检查 WebView2 运行时。", "KPL 规格", MessageBoxButtons.OK, MessageBoxIcon.Error); };
         Resize += delegate { if (controller != null) controller.Bounds = ClientRectangle; };
         FormClosing += BeforeClose;
-        FormClosed += delegate { if (controller != null) { controller.Close(); controller = null; } CleanupProfile(); };
+        FormClosed += delegate { if (watcher != null) watcher.Dispose(); if (controller != null) { controller.Close(); controller = null; } CleanupProfile(); };
     }
 
     private void CleanupProfile()
@@ -185,7 +190,7 @@ internal sealed partial class EditorWindow : Form
         catch { PostResult("invalid"); return; }
         if (message == null || !message.ContainsKey("type") || !(message["type"] is string)) return;
         string type = (string)message["type"];
-        if (type == "ready") { loaded = true; everReady = true; loadTimer.Stop(); PostRaw(new Dictionary<string, object> { { "type", "info" }, { "version", AppVersion } }); CheckUpdate(); if (thumbsOk) BuildThumbs(); return; }
+        if (type == "ready") { loaded = true; everReady = true; loadTimer.Stop(); PostRaw(new Dictionary<string, object> { { "type", "info" }, { "version", AppVersion } }); CheckUpdate(); if (thumbsOk) BuildThumbs(); WatchDocument(); return; }
         if (!loaded) return;
         if (type == "openUpdate") { OpenReleasePage(); return; }
         if (type == "prefs") { object prefs; if (message.TryGetValue("prefs", out prefs)) Prefs.Save(prefs as Dictionary<string, object>); return; }
@@ -209,6 +214,38 @@ internal sealed partial class EditorWindow : Form
     }
 
     private void PostResult(string result) { Post("saveResult", result); }
+
+    /* 监视文档所在目录里的这一个文件：Agent 用临时文件替换、其他程序直接写入都会触发。 */
+    private void WatchDocument()
+    {
+        if (watcher != null) return;
+        watcher = new FileSystemWatcher(Path.GetDirectoryName(session.FilePath), Path.GetFileName(session.FilePath));
+        watcher.NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size;
+        watcher.Changed += delegate { KickReload(); };
+        watcher.Created += delegate { KickReload(); };
+        watcher.Renamed += delegate { KickReload(); };
+        watcher.EnableRaisingEvents = true;
+    }
+
+    private void KickReload()
+    {
+        if (IsDisposed) return;
+        BeginInvoke((Action)delegate { reloadRetries = 0; reloadTimer.Stop(); reloadTimer.Start(); });
+    }
+
+    /* 文件内容变了才推给页面；本程序自己保存的内容与基准相同，不会回推。新引用的图片随后补生成缩略图。 */
+    private void ReloadDocument()
+    {
+        reloadTimer.Stop();
+        if (!loaded) return;
+        Dictionary<string, object> model;
+        try { model = session.ReloadIfChanged(); }
+        catch (IOException) { if (++reloadRetries <= 20) reloadTimer.Start(); return; }
+        catch (Exception) { Post("external", "invalid"); return; }
+        if (model == null) return;
+        PostRaw(new Dictionary<string, object> { { "type", "external" }, { "status", "changed" }, { "model", model } });
+        if (thumbsOk) BuildThumbs();
+    }
 
     private void Post(string type, string status)
     {

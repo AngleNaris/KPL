@@ -20,8 +20,8 @@
   const host = window.chrome && window.chrome.webview ? window.chrome.webview : null;
 
   /* 分段染色（格式见 KPL references/spec-format.md）：agent 用 {类别:内容} 标出分段，编辑器只显示内容并按类别染色。
-     没有标记的文字不染色；分段内可以有 @{…} 引用。 */
-  const SEGMENT_TAGS = {镜头: 'camera', 风格: 'style', 场景: 'scene', 动态: 'action'};
+     没有标记的文字不染色；分段内可以有 @{…} 引用。Agent 写入时一段一行（html_spec.py apply 强制）。 */
+  const SEGMENT_TAGS = {镜头: 'camera', 风格: 'style', 场景: 'scene', 动态: 'action', 约束: 'constraint'};
   const SEGMENT_PATTERN = new RegExp(String.raw`\{(${Object.keys(SEGMENT_TAGS).join('|')})[:：]((?:@\{[^{}]*\}|[^{}])*)\}`, 'g');
 
   const SAVE_MESSAGES = {
@@ -2771,8 +2771,7 @@
   }
 
   function setupDialog() {
-    const dialog = $('confirm-dialog');
-    dialog.addEventListener('click', event => {
+    for (const dialog of [$('confirm-dialog'), $('external-dialog')]) dialog.addEventListener('click', event => {
       const choice = event.target.closest('[data-choice]');
       if (choice) dialog.close(choice.dataset.choice);
     });
@@ -2879,6 +2878,55 @@
     if (outcome === 'write_unconfirmed') uncertain = true;
     renderChrome();
     status(outcome === 'unreachable' ? '无法连接保存程序，修改仍未保存。' : SAVE_MESSAGES[outcome] || SAVE_MESSAGES.invalid);
+  }
+
+  /* Agent 等外部程序改了文件：没有未保存的修改就原地换成新内容；有的话让用户二选一。
+     对话框开着时又改了，选完后用最新的那一版。 */
+  let externalModel = null;
+  async function onExternal(data) {
+    if (data.status !== 'changed') {
+      status('文件已在外部修改，但内容无法读取或不符合格式；界面仍是原内容，保存会被拦截。');
+      return;
+    }
+    const waiting = externalModel !== null;
+    externalModel = data.model;
+    if (waiting) return;
+    const keep = state.dirty && await askExternal() === 'keep';
+    const model = externalModel;
+    externalModel = null;
+    if (keep) keepMine(model); else loadExternal(model);
+  }
+
+  function askExternal() {
+    const dialog = $('external-dialog');
+    dialog.returnValue = 'keep';   // Esc 关闭时保留用户的修改，不丢东西
+    dialog.showModal();
+    dialog.querySelector('[data-choice="load"]').focus();
+    return new Promise(resolve => dialog.addEventListener('close', () => resolve(dialog.returnValue || 'keep'), {once: true}));
+  }
+
+  /* 换成外部版本：选中的镜头还在就保持，撤销记录清空（撤回去会丢掉外部修改）。 */
+  function loadExternal(model) {
+    state.doc = model;
+    state.working = clone(model);
+    if (canEdit()) normalizeDurations(state.working);
+    state.dirty = state.editing && JSON.stringify(state.working) !== JSON.stringify(model);
+    history.past.length = 0; history.future.length = 0;
+    state.timelineSel = null;
+    if (!shotById(state.selectedId)) state.selectedId = shots().length ? shots()[0].id : null;
+    if (state.editing && !canEdit()) { setEditing(false); }
+    else render();
+    status('文件已在外部更新（修订 ' + model.revision + '），已载入。');
+  }
+
+  /* 保留用户的修改：以外部版本为保存基准，下次保存覆盖外部修改。文档身份跟随外部版本，否则保存会被拦截。 */
+  function keepMine(model) {
+    state.doc = model;
+    for (const key of ['document_id', 'version', 'status', 'confirmation']) state.working[key] = model[key];
+    if (model.timeline && !state.working.timeline) state.working.timeline = clone(model.timeline);
+    state.working.schema = state.working.timeline ? SCHEMA_V3 : model.schema;
+    renderChrome();
+    status('已保留你的修改；保存时会覆盖外部的修改。');
   }
 
   /* 宿主关闭窗口前读取状态；有未保存修改时由页面询问，再通知宿主允许关闭。 */
@@ -3070,6 +3118,7 @@
       else if (data.type === 'mediaPicked') onMediaPicked(data);
       else if (data.type === 'mediaUrls') onMediaUrls(data.urls);
       else if (data.type === 'subtitlePicked') onSubtitlePicked(data);
+      else if (data.type === 'external') onExternal(data);
     });
   }
 

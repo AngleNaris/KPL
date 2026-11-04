@@ -232,7 +232,7 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(rc, 0, read)
         expected = read['sha256']
         row = html_spec.new_shot('stable-a', 'S001')
-        row.update(duration_seconds='1.5', content='店员回头。', prompt='中文提示词')
+        row.update(duration_seconds='1.5', content='店员回头。', prompt='{动态:中文提示词}')
         patch_path = self.root / '.kpl' / 'tmp' / 'patch.json'
         patch_path.write_text(json.dumps({'operations':[{'target':'shot', 'action':'add', 'id':'stable-a',
                                                         'old':None, 'new':row}]}, ensure_ascii=False), encoding='utf-8')
@@ -241,7 +241,7 @@ class ProjectTests(unittest.TestCase):
                          '--expected-sha256', expected, '--patch', patch_path)
         self.assertEqual(rc, 0, result)
         self.assertIn('shot:stable-a', result['affected'])
-        self.assertEqual(html_spec.load(self.spec)['shots'][0]['prompt'], '中文提示词')
+        self.assertEqual(html_spec.load(self.spec)['shots'][0]['prompt'], '{动态:中文提示词}')
         rc, state = run(SCRIPTS / 'kpl_check.py', self.spec, '--state', state_path, '--allow-root', self.root)
         self.assertEqual(rc, 1, state)
         self.assertEqual(state['state_binding']['status'], 'stale')
@@ -259,9 +259,9 @@ class ProjectTests(unittest.TestCase):
                            '--expected-sha256', selection['current_spec']['sha256'], '--patch', patch_path)
         self.assertNotEqual(rc, 0, conflict)
         self.assertEqual(self.spec.read_bytes(), after)
-        payload = '人物回头 </script><script>不会执行</script>'
+        payload = '{动态:人物回头 </script><script>不会执行</script>}'
         patch_path.write_text(json.dumps({'operations':[{'target':'shot', 'id':'stable-a', 'field':'prompt',
-                                                        'old':'中文提示词', 'new':payload}]}, ensure_ascii=False), encoding='utf-8')
+                                                        'old':'{动态:中文提示词}', 'new':payload}]}, ensure_ascii=False), encoding='utf-8')
         rc, updated = run(SCRIPTS / 'html_spec.py', 'apply', '--project', self.root, '--spec', relative,
                           '--expected-sha256', selection['current_spec']['sha256'], '--patch', patch_path)
         self.assertEqual(rc, 0, updated)

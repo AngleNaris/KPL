@@ -6,7 +6,7 @@
 <p>技能中同时提供 Windows x64 共享编辑器和完整可修改源码。一份程序服务多份 <code>.kpldoc</code>，不需要复制进每个项目。</p>
 <h2>源码在哪里</h2>
 <ul><li><code>src/Host.cs</code>：窗口、WebView2、原生接口和资源访问。</li><li><code>src/Media.cs</code>：时间线媒体的文件选择、路径换算与只读播放映射。</li>
-<li><code>src/DocumentSession.cs</code>：文档读取、保存与冲突检查。</li>
+<li><code>src/DocumentSession.cs</code>：文档读取、保存、冲突检查与外部修改的重新读入。</li>
 <li><code>ui/index.html</code>、<code>ui/tokens.css</code>、<code>ui/app.css</code>、<code>ui/app.js</code>：界面源码；<code>ui/</code> 还包含辅助说明及素材脚本。</li>
 <li><code>assets/</code>：图标与应用内标识。<code>make_icon.py</code> 由设计原图生成 <code>kpl.ico</code>，需已有的 Pillow；<code>trace_logo.py</code> 把横版原图描摹成矢量 <code>logo-wide.svg</code>，需 numpy 和 Pillow，并会直接改写 <code>ui/index.html</code> 中 <code>KPL_LOGO_START/END</code> 之间的标识精灵，不要手改那一段。两者都不参与程序构建，但 <code>kpl.ico</code> 是构建输入，改后需重新构建并更新清单。</li>
 <li><code>build.py</code>、<code>native_doc.py</code>、<code>file-association.ps1</code>、<code>tests/</code> 和 <code>examples/</code>：构建、格式转换、打开方式、测试及合成示例。<code>../scripts/html_spec.py</code> 和 <code>../scripts/editor_bundle.py</code> 也是构建输入。</li></ul>

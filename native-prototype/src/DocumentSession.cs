@@ -367,6 +367,19 @@ internal sealed class DocumentSession
         }
     }
 
+    /* 外部程序（Agent）改了文件时重新读入：内容与当前基准相同（包括本程序刚保存的）返回 null；
+       读不到抛 IOException（对方可能还在写），不符合格式抛 InvalidDataException，两种情况都保留原基准，保存仍按冲突拦截。 */
+    internal Dictionary<string, object> ReloadIfChanged()
+    {
+        byte[] bytes = ReadBounded(path);
+        string hash = Hash(bytes);
+        if (hash == baseline) return null;
+        var next = Parse(bytes);
+        Validate(next, false);
+        model = next; baseline = hash;
+        return model;
+    }
+
     internal string Save(Dictionary<string, object> next, Action<string> testHook)
     {
         Validate(next);

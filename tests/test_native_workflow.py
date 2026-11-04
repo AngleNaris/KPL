@@ -83,6 +83,22 @@ class NativeProjectTests(unittest.TestCase):
         self.assertNotEqual(rc, 0, error)
         self.assertEqual(before, self.spec.read_bytes())
 
+    def test_agent_text_is_one_segment_per_line(self):
+        shot = html_spec.new_shot('stable-a', 'S01')
+        self.assertEqual(self.apply([{'target': 'shot', 'id': 'stable-a', 'action': 'add', 'old': None, 'new': shot}])[0], 0)
+        self.assertEqual(self.reselect()[0], 0)
+        before = self.spec.read_bytes()
+        for bad in ('{镜头:大远景}，留空区要求：画面中部不留遮挡',      # 行外有未分类文字
+                    '{镜头:大远景}，{风格:蓝调时刻}',                # 一行两段
+                    '{构图:横构图}'):                                # 未知类别
+            rc, error = self.apply([{'target': 'shot', 'id': 'stable-a', 'field': 'prompt', 'old': '', 'new': bad}])
+            self.assertNotEqual(rc, 0, error)
+            self.assertEqual(before, self.spec.read_bytes())
+        good = '{镜头:大远景，固定机位}\n{动态:0到4秒，星芒浮起}\n{动态:4到10秒，星芒增多}\n\n{约束:画面内不得有人物或文字}'
+        rc, result = self.apply([{'target': 'shot', 'id': 'stable-a', 'field': 'prompt', 'old': '', 'new': good}])
+        self.assertEqual(rc, 0, result)
+        self.assertEqual(html_spec.load_document(self.spec)['shots'][0]['prompt'], good)
+
     def test_read_only_export_cannot_be_selected_as_another_authority(self):
         export = self.root / '01_项目说明/02_查看副本_v001_draft.html'
         result = subprocess.run([sys.executable, str(ROOT / 'native-prototype/native_doc.py'),

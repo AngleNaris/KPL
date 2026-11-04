@@ -14,7 +14,7 @@
     description: '详细描述', shot_scale: '景别', camera_motion: '镜头运动', prompt: '图片生成提示词', video_prompt: '视频提示词', mark: '标记'};
   const MULTILINE = ['content', 'description', 'prompt', 'video_prompt'];
   // 描述与提示词中的分段标记 {类别:内容}；只读视图与复制只保留内容（格式见 references/spec-format.md）
-  const SEGMENT = /\{(?:镜头|风格|场景|动态)[:：]((?:@\{[^{}]*\}|[^{}])*)\}/g;
+  const SEGMENT = /\{(?:镜头|风格|场景|动态|约束)[:：]((?:@\{[^{}]*\}|[^{}])*)\}/g;
   const plainText = value => value.replace(SEGMENT, '$1');
   const exactKeys = (value, keys) => Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 
