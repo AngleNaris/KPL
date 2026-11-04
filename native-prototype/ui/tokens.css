@@ -1,6 +1,6 @@
 /* KPL 编辑器设计令牌：组件只读取这里的名字。
    模式由 <html data-mode> 决定（system | light | dark），颜色用 light-dark() 并列浅色/深色取值；
-   主题色由 <html data-accent> 决定（amber | red | teal | blue）。几何一律直角。 */
+   主题色由 <html data-accent> 决定（amber | red | teal | blue | purple | green）。几何一律直角。 */
 
 :root {
   color-scheme: dark;
@@ -115,4 +115,10 @@
 }
 :root[data-accent="blue"], [data-swatch="blue"] {
   --accent: light-dark(#1D5BBF, #79AEFF);
+}
+:root[data-accent="purple"], [data-swatch="purple"] {
+  --accent: light-dark(#6E3FC4, #B39BFF);
+}
+:root[data-accent="green"], [data-swatch="green"] {
+  --accent: light-dark(#33701A, #86D45E);
 }

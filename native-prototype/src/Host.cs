@@ -194,6 +194,7 @@ internal sealed partial class EditorWindow : Form
         if (!loaded) return;
         if (type == "openUpdate") { OpenReleasePage(); return; }
         if (type == "prefs") { object prefs; if (message.TryGetValue("prefs", out prefs)) Prefs.Save(prefs as Dictionary<string, object>); return; }
+        if (type == "copyText") { object text; message.TryGetValue("text", out text); Post("copyTextResult", CopyText(text as string)); return; }
         if (type == "copyImage") { object rel; message.TryGetValue("path", out rel); Post("copyResult", CopyImage(rel as string)); return; }
         if (type == "closeApproved") { allowClose = true; BeginInvoke((Action)Close); return; }
         if (type == "pickMedia" || type == "resolveMedia" || type == "pickSubtitle") { OnMediaMessage(type, message); return; }
@@ -416,6 +417,14 @@ internal sealed partial class EditorWindow : Form
         });
     }
 
+    /* 提示词一键复制：页面已换好引用，这里只放纯文本。 */
+    private static string CopyText(string text)
+    {
+        if (String.IsNullOrEmpty(text) || text.Length > 100000) return "failed";
+        try { Clipboard.SetText(text, TextDataFormat.UnicodeText); return "copied"; }
+        catch (Exception) { return "failed"; }
+    }
+
     /* 只复制参考资产目录内的普通图片文件，以位图放入剪贴板。 */
     private string CopyImage(string rel)
     {
@@ -473,7 +482,7 @@ internal static class Prefs
 {
     // 测试会改指到临时目录，不碰用户真实偏好
     internal static string FilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "KPL", "prefs.json");
-    private static readonly string[] Modes = { "system", "light", "dark" }, Accents = { "amber", "red", "teal", "blue" }, Sizes = { "panelH", "asideW", "gutterW", "winW", "winH" };
+    private static readonly string[] Modes = { "system", "light", "dark" }, Accents = { "amber", "red", "teal", "blue", "purple", "green" }, Sizes = { "panelH", "asideW", "gutterW", "winW", "winH" };
     private static readonly string[] WindowKeys = { "winW", "winH", "winMax" };
     private static readonly string[] Flags = { "snap", "link" };
 

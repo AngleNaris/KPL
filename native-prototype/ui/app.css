@@ -534,6 +534,7 @@ html.is-scrubbing, html.is-scrubbing * { user-select: none; }
 .block-title, .field > .label { font-size: var(--fs-label); letter-spacing: var(--tracking-label); color: var(--text-3); font-weight: 600; }
 .count { font: var(--fs-label) var(--font-mono); color: var(--text-3); }
 .count.is-over { color: var(--warning); }
+.block-copy { block-size: 24px; margin-block: -4px; align-self: center; }
 .field-empty { color: var(--text-3); }
 .hint { font-size: var(--fs-label); color: var(--text-3); }
 
@@ -555,6 +556,34 @@ html.is-scrubbing, html.is-scrubbing * { user-select: none; }
 .seg-camera { color: var(--seg-camera); } .seg-style { color: var(--seg-style); }
 .seg-scene { color: var(--seg-scene); } .seg-action { color: var(--seg-action); }
 .seg-constraint { color: var(--seg-constraint); }
+/* 视频提示词的动态时段：时间显示成不可编辑的时段块（标签由 CSS 画出，不进光标与选区），
+   下方细条标出这一段在镜头里的位置；解锁后点击修改 */
+.beat {
+  display: inline-flex; flex-direction: column; gap: 2px; vertical-align: 0.1em;
+  margin-inline-end: var(--space-2); padding: 1px var(--space-1) 2px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  min-inline-size: 7.5ch; text-align: center;
+  font: 600 var(--fs-label)/1.3 var(--font-mono); font-variant-numeric: tabular-nums; user-select: none;
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.beat::before { content: attr(data-label); white-space: nowrap; }
+.beat::after {
+  content: ""; block-size: 2px;
+  background: linear-gradient(to right, color-mix(in srgb, currentColor 22%, transparent) var(--from),
+    currentColor var(--from) var(--to), color-mix(in srgb, currentColor 22%, transparent) var(--to));
+}
+.rich[contenteditable] .beat { cursor: pointer; }
+.rich[contenteditable] .beat:hover { background: color-mix(in srgb, currentColor 22%, transparent); }
+.beat.is-warn { color: var(--warning); }
+.beat-pop {
+  position: fixed; z-index: 20; display: flex; gap: var(--space-3); padding: var(--space-3);
+  background: var(--surface); border: var(--hair) solid var(--line); box-shadow: 0 12px 32px var(--shadow);
+}
+.beat-field { display: grid; gap: var(--space-1); }
+.beat-field input { inline-size: 8ch; padding-block: var(--space-1); border-block-end: var(--hair) solid var(--line); }
+.beat-field input:focus-visible { outline: none; border-color: var(--accent); }
+.beat-field input:disabled { color: var(--text-3); }
+.beat-field input::-webkit-inner-spin-button, .beat-field input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 /* 右键菜单里的类别色块；“清除类别”只有边框 */
 .seg-swatch { inline-size: 12px; block-size: 12px; flex: none; background: currentColor; }
 .seg-swatch.is-none { background: transparent; box-shadow: inset 0 0 0 var(--hair) var(--line); }
@@ -694,17 +723,36 @@ html.is-scrubbing, html.is-scrubbing * { user-select: none; }
 }
 @starting-style { .media-clip, .cue, .marker, .lane { opacity: 0; } }
 .media-clip.is-leaving, .cue.is-leaving, .marker.is-leaving { opacity: 0; pointer-events: none; }
+
+/* 外部（Agent）修改载入后：新建或改动的地方闪一下强调色；删除的留一个警告色残影后淡出（表格行加删除线）。
+   用内阴影铺色，不改布局，也不覆盖元素自己的背景；表格行铺在单元格上 */
+@keyframes fx-fresh {
+  0%, 30% { box-shadow: inset 0 0 0 2px var(--accent), inset 0 0 0 100vmax color-mix(in srgb, var(--accent) 20%, transparent); }
+  100% { box-shadow: inset 0 0 0 2px transparent, inset 0 0 0 100vmax transparent; }
+}
+@keyframes fx-fresh-fill {
+  0%, 30% { box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--accent) 20%, transparent); }
+  100% { box-shadow: inset 0 0 0 100vmax transparent; }
+}
+@keyframes fx-gone {
+  0%, 35% { opacity: 1; box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--danger) 22%, transparent); }
+  100% { opacity: 0; box-shadow: inset 0 0 0 100vmax color-mix(in srgb, var(--danger) 22%, transparent); }
+}
+.is-fresh:not(tr) { animation: fx-fresh 1800ms var(--ease); }
+tr.is-fresh > td { animation: fx-fresh-fill 1800ms var(--ease); }
+.is-gone:not(tr), tr.is-gone > td { animation: fx-gone 1400ms var(--ease) forwards; pointer-events: none; }
+tr.is-gone > td { text-decoration: line-through; }
 .btn:active:not(:disabled), .clip:active, .mark-btn:active, .asset-card:active, .menu-item:active { translate: 0 1px; }
 
 /* 弹层、菜单、素材预览：自触发元素一侧展开，再沿原路收回 */
-.popover, .menu, .peek {
+.popover, .menu, .peek, .beat-pop {
   transition: opacity var(--dur) var(--ease), translate var(--dur) var(--ease), display var(--dur) allow-discrete;
 }
-.popover[hidden], .menu[hidden], .peek[hidden] { opacity: 0; translate: 0 -6px; }
-.menu[data-side="above"][hidden], .peek[data-side="above"][hidden] { translate: 0 6px; }
+.popover[hidden], .menu[hidden], .peek[hidden], .beat-pop[hidden] { opacity: 0; translate: 0 -6px; }
+.menu[data-side="above"][hidden], .peek[data-side="above"][hidden], .beat-pop[data-side="above"][hidden] { translate: 0 6px; }
 @starting-style {
-  .popover:not([hidden]), .menu:not([hidden]), .peek:not([hidden]) { opacity: 0; translate: 0 -6px; }
-  .menu[data-side="above"]:not([hidden]), .peek[data-side="above"]:not([hidden]) { translate: 0 6px; }
+  .popover:not([hidden]), .menu:not([hidden]), .peek:not([hidden]), .beat-pop:not([hidden]) { opacity: 0; translate: 0 -6px; }
+  .menu[data-side="above"]:not([hidden]), .peek[data-side="above"]:not([hidden]), .beat-pop[data-side="above"]:not([hidden]) { translate: 0 6px; }
 }
 
 /* 视图切换：两个视图叠在同一格内交叉淡入淡出 */

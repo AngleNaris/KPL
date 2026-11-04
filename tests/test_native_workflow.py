@@ -99,6 +99,31 @@ class NativeProjectTests(unittest.TestCase):
         self.assertEqual(rc, 0, result)
         self.assertEqual(html_spec.load_document(self.spec)['shots'][0]['prompt'], good)
 
+    def test_video_prompt_beats_use_fixed_format_and_match_duration(self):
+        shot = html_spec.new_shot('stable-a', 'S01')
+        shot.update(duration_seconds='10')
+        self.assertEqual(self.apply([{'target': 'shot', 'id': 'stable-a', 'action': 'add', 'old': None, 'new': shot}])[0], 0)
+        self.assertEqual(self.reselect()[0], 0)
+        before = self.spec.read_bytes()
+        for bad in ('{动态:0到4秒，星芒浮起，4到10秒，星芒增多}',                       # 自由写法
+                    '{动态:0-4秒：星芒浮起}\n{动态:5-10秒：星芒增多}',                  # 没有首尾相接
+                    '{动态:0-4秒：星芒浮起}\n{动态:4-9秒：星芒增多}',                   # 没有结束在镜头时长
+                    '{动态:0-4秒：星芒浮起，4-10秒：星芒增多}'):                         # 一段里写两个时间
+            rc, error = self.apply([{'target': 'shot', 'id': 'stable-a', 'field': 'video_prompt', 'old': '', 'new': bad}])
+            self.assertNotEqual(rc, 0, error)
+            self.assertEqual(before, self.spec.read_bytes())
+        good = '{镜头:大远景，固定机位}\n{动态:0-4秒：星芒浮起}\n{动态:4-10秒：星芒增多}\n{动态:湖面涟漪持续}'
+        rc, result = self.apply([{'target': 'shot', 'id': 'stable-a', 'field': 'video_prompt', 'old': '', 'new': good}])
+        self.assertEqual(rc, 0, result)
+        self.assertEqual(self.reselect()[0], 0)
+        # 只改时长、不改时段会被拒绝；两个一起改才写入
+        rc, error = self.apply([{'target': 'shot', 'id': 'stable-a', 'field': 'duration_seconds', 'old': '10', 'new': '12'}])
+        self.assertNotEqual(rc, 0, error)
+        rc, result = self.apply([
+            {'target': 'shot', 'id': 'stable-a', 'field': 'duration_seconds', 'old': '10', 'new': '12'},
+            {'target': 'shot', 'id': 'stable-a', 'field': 'video_prompt', 'old': good, 'new': good.replace('4-10秒', '4-12秒')}])
+        self.assertEqual(rc, 0, result)
+
     def test_read_only_export_cannot_be_selected_as_another_authority(self):
         export = self.root / '01_项目说明/02_查看副本_v001_draft.html'
         result = subprocess.run([sys.executable, str(ROOT / 'native-prototype/native_doc.py'),

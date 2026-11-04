@@ -1,4 +1,4 @@
-/* KPL 编辑器界面：表格与 Layout 时间线共享同一份文档、选中项与未保存状态。 */
+/* KPL 编辑器界面：表格与 LAYOUT 时间线共享同一份文档、选中项与未保存状态。 */
 (function () {
   'use strict';
 
@@ -22,6 +22,8 @@
   /* 分段染色（格式见 KPL references/spec-format.md）：agent 用 {类别:内容} 标出分段，编辑器只显示内容并按类别染色。
      没有标记的文字不染色；分段内可以有 @{…} 引用。Agent 写入时一段一行（html_spec.py apply 强制）。 */
   const SEGMENT_TAGS = {镜头: 'camera', 风格: 'style', 场景: 'scene', 动态: 'action', 约束: 'constraint'};
+  /* 视频提示词里的动态时段：{动态:0-4秒：内容}，时间精确到 0.1 秒（格式见 spec-format.md）。 */
+  const BEAT_PATTERN = /^((?:0|[1-9]\d*)(?:\.\d)?)-((?:0|[1-9]\d*)(?:\.\d)?)秒：/;
   const SEGMENT_PATTERN = new RegExp(String.raw`\{(${Object.keys(SEGMENT_TAGS).join('|')})[:：]((?:@\{[^{}]*\}|[^{}])*)\}`, 'g');
 
   const SAVE_MESSAGES = {
@@ -118,6 +120,88 @@
     return count;
   }
   const round = value => String(Math.round(value * 1000) / 1000);
+
+  /* ---------- 动态时段：单位 0.1 秒；时段从 0 开始首尾相接，最后一段结束于镜头时长 ---------- */
+  const tenths = text => Math.round(Number(text) * 10);
+  const beatText = (from, to) => tenth(from / 10) + '-' + tenth(to / 10) + '秒：';
+
+  /* 视频提示词里带时间的动态段，按出现顺序。 */
+  function beatsOf(text) {
+    const beats = [];
+    for (const match of (text || '').matchAll(SEGMENT_PATTERN)) {
+      const head = match[1] === '动态' ? match[2].match(BEAT_PATTERN) : null;
+      if (head) beats.push({from: tenths(head[1]), to: tenths(head[2])});
+    }
+    return beats;
+  }
+
+  /* 按顺序把时段写回文字，其他内容不动。 */
+  function withBeats(text, beats) {
+    let index = 0;
+    return text.replace(SEGMENT_PATTERN, (whole, tag, inner) => {
+      const head = tag === '动态' ? inner.match(BEAT_PATTERN) : null;
+      if (!head) return whole;
+      const beat = beats[index++];
+      return '{' + tag + ':' + beatText(beat.from, beat.to) + inner.slice(head[0].length) + '}';
+    });
+  }
+
+  /* 改第 index 段的结束：下一段的开始跟着移动（每段至少 0.1 秒）；改的是最后一段时，镜头时长随之变化。返回实际的结束时间。 */
+  function setBeatEnd(shot, index, to) {
+    const beats = beatsOf(shot.video_prompt), beat = beats[index], next = beats[index + 1];
+    to = Math.max(beat.from + 1, next ? Math.min(to, next.to - 1) : to);
+    beat.to = to;
+    if (next) next.from = to;
+    else shot.duration_seconds = tenth(to / 10);
+    shot.video_prompt = withBeats(shot.video_prompt, beats);
+    return to;
+  }
+
+  /* 镜头时长在别处改了（表格、时间线、对齐视频等）时，最后一段的结束跟着改；
+     时长不超过最后一段的开始就不动，交给时段块标警告。返回改了文字的镜头。 */
+  const knownDurations = new Map();
+  function followDurations() {
+    const moved = [];
+    for (const shot of shots()) {
+      const total = seconds(shot) === null ? null : tenths(seconds(shot));
+      if (knownDurations.get(shot.id) === total) continue;
+      knownDurations.set(shot.id, total);
+      const beats = beatsOf(shot.video_prompt), last = beats[beats.length - 1];
+      if (!last || total === null || last.to === total || total <= last.from) continue;
+      last.to = total;
+      shot.video_prompt = withBeats(shot.video_prompt, beats);
+      moved.push(shot);
+    }
+    return moved;
+  }
+  function seedDurations() {
+    knownDurations.clear();
+    for (const shot of shots()) knownDurations.set(shot.id, seconds(shot) === null ? null : tenths(seconds(shot)));
+  }
+
+  /* 时段块的位置条与警告：没有首尾相接、或最后一段没有结束在镜头时长时标警告色。 */
+  function markBeats(box, shot) {
+    const chips = [...box.querySelectorAll('.beat')], total = seconds(shot) === null ? null : tenths(seconds(shot));
+    let prev = 0;
+    chips.forEach((chip, index) => {
+      const head = chip.dataset.beat.match(BEAT_PATTERN), from = tenths(head[1]), to = tenths(head[2]);
+      const ok = from === prev && to > from && (index < chips.length - 1 || total === null || to === total);
+      const span = Math.max(total || 0, to, 1);
+      chip.classList.toggle('is-warn', !ok);
+      chip.title = ok ? '' : '时段没有首尾相接，或最后一段没有结束在镜头时长';
+      chip.style.setProperty('--from', from / span * 100 + '%');
+      chip.style.setProperty('--to', to / span * 100 + '%');
+      prev = to;
+    });
+  }
+
+  /* 详情栏正显示的视频提示词跟着更新（输入中不重绘）。 */
+  function refreshBeats(moved) {
+    const box = $('f-video-prompt'), shot = shotById(state.selectedId);
+    if (!box || !shot || !box.beatShot) return;
+    if (moved.includes(shot) && document.activeElement !== box) box.replaceChildren(...richNodes(shot.video_prompt, !state.editing, shot));
+    markBeats(box, shot);
+  }
   const durationText = shot => seconds(shot) === null ? UNKNOWN : shot.duration_seconds.trim() + ' 秒';
 
   function plan() {
@@ -265,12 +349,24 @@
     return document.createTextNode(part.text);
   }
 
-  const segNode = (tag, parts, interactive) => el('span', {class: 'seg seg-' + SEGMENT_TAGS[tag], 'data-tag': tag, title: tag},
-    parts.map(part => partNode(part, interactive)));
+  /* beatShot 只在视频提示词里给出：动态段开头的时间显示成时段块。时段块不含文字节点（标签由 CSS 画出），
+     光标偏移与保存都按它的原文（如“0-4秒：”）计算。 */
+  function segNode(tag, parts, interactive, beatShot) {
+    const nodes = parts.map(part => partNode(part, interactive));
+    const first = parts[0], head = beatShot && tag === '动态' && first && first.name === undefined && !first.picture
+      ? first.text.match(BEAT_PATTERN) : null;
+    if (head) {
+      nodes[0] = document.createTextNode(first.text.slice(head[0].length));
+      nodes.unshift(el('span', {class: 'beat', contenteditable: 'false', 'data-beat': head[0],
+        'data-label': tenth(tenths(head[1]) / 10) + '–' + tenth(tenths(head[2]) / 10) + 's'}));
+    }
+    return el('span', {class: 'seg seg-' + SEGMENT_TAGS[tag], 'data-tag': tag, title: tag}, nodes);
+  }
+  const isBeat = node => node.nodeType === Node.ELEMENT_NODE && node.dataset.beat !== undefined;
   const endBreak = () => el('br', {'data-end': ''});
 
-  function richNodes(text, interactive) {
-    const nodes = segments(text).map(item => item.parts ? segNode(item.tag, item.parts, interactive) : partNode(item, interactive));
+  function richNodes(text, interactive, beatShot) {
+    const nodes = segments(text).map(item => item.parts ? segNode(item.tag, item.parts, interactive, beatShot) : partNode(item, interactive));
     if ((text || '').endsWith('\n')) nodes.push(endBreak());
     return nodes;
   }
@@ -279,6 +375,7 @@
   const childText = node => [...node.childNodes].map(nodeText).join('');
   function nodeText(node) {
     if (node.nodeType === Node.TEXT_NODE) return node.data;
+    if (isBeat(node)) return node.dataset.beat;
     if (node.nodeName === 'BR') return node.hasAttribute('data-end') ? '' : '\n';
     const inner = childText(node);
     if (!node.dataset.tag) return inner;
@@ -303,7 +400,7 @@
         if (!child.dataset || !child.dataset.tag) { run += nodeText(child); continue; }
         flush();
         const inner = childText(child);
-        if (inner) nodes.push(segNode(child.dataset.tag, inlineParts(inner), false));
+        if (inner) nodes.push(segNode(child.dataset.tag, inlineParts(inner), false, box.beatShot));
       }
       flush();
       if (text.endsWith('\n')) nodes.push(endBreak());
@@ -312,19 +409,27 @@
     if (at !== null) setCaret(box, at);
   }
 
-  /* 光标与选区按可见文字的偏移记录，重绘后再按偏移放回。 */
+  /* 光标与选区按可见文字的偏移记录，重绘后再按偏移放回。时段块按原文计入，与保存的文字一一对应。 */
+  const plainOf = node => node.nodeType === Node.TEXT_NODE ? node.data : isBeat(node) ? node.dataset.beat
+    : [...node.childNodes].map(plainOf).join('');
   function textOffset(root, node, at) {
     const range = document.createRange();
     range.selectNodeContents(root);
     range.setEnd(node, at);
-    return range.toString().length;
+    return plainOf(range.cloneContents()).length;
   }
 
   function pointAt(root, offset) {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      if (offset <= node.data.length) return [node, offset];
-      offset -= node.data.length;
+      const length = node.nodeType === Node.TEXT_NODE ? node.data.length : isBeat(node) ? node.dataset.beat.length : -1;
+      if (length < 0) continue;
+      if (offset <= length && node.nodeType === Node.TEXT_NODE) return [node, offset];
+      // 落在时段块上时放到块的前面或后面
+      if (offset < length || (offset === length && !node.nextSibling)) {
+        return [node.parentNode, [...node.parentNode.childNodes].indexOf(node) + (offset ? 1 : 0)];
+      }
+      offset -= length;
     }
     return [root, root.childNodes.length];
   }
@@ -352,7 +457,7 @@
     const tags = [];
     const walk = (node, inherited) => {
       for (const child of node.childNodes) {
-        if (child.nodeType !== Node.TEXT_NODE && child.nodeName !== 'BR') { walk(child, child.dataset.tag || inherited); continue; }
+        if (child.nodeType !== Node.TEXT_NODE && child.nodeName !== 'BR' && !isBeat(child)) { walk(child, child.dataset.tag || inherited); continue; }
         const part = nodeText(child);
         text += part;
         tags.push(...Array(part.length).fill(inherited));
@@ -381,10 +486,18 @@
   /* 只读与编辑共用同一个元素，解锁只加 contenteditable，布局不变。分段标记不显示，编辑时留在所在分段上。
      输入法组字期间不重绘，组字结束再处理。 */
   function textBlock(id, title, shot, key, onChange, limit) {
-    const editing = state.editing;
+    const editing = state.editing, beatShot = key === 'video_prompt' ? shot : null;
     const box = el('div', {id, class: 'rich', role: 'textbox', 'aria-multiline': 'true', 'aria-labelledby': id + '-title',
       'aria-readonly': editing ? null : 'true', contenteditable: editing ? 'plaintext-only' : null, spellcheck: 'false'},
-      richNodes(shot[key], !editing));
+      richNodes(shot[key], !editing, beatShot));
+    box.beatShot = beatShot;
+    if (beatShot) {
+      markBeats(box, shot);
+      box.addEventListener('click', event => {
+        const chip = event.target.closest('.beat');
+        if (chip && state.editing) openBeat(chip, box, shot);
+      });
+    }
     // 有上限的字段在标题旁显示显示字数（不计分段标记）；超出只标警告色，不拦保存，上限由 agent 端检查执行
     const count = limit ? el('span', {class: 'count'}) : null;
     const recount = () => {
@@ -399,6 +512,7 @@
       if (event.isComposing) return;
       if (stale(box)) retokenize(box);
       shot[key] = childText(box);
+      if (beatShot) markBeats(box, shot);
       recount();
       onChange();
     };
@@ -421,7 +535,8 @@
           icon: el('span', {class: 'seg-swatch ' + (tag ? 'seg-' + SEGMENT_TAGS[tag] : 'is-none')}),
           pick: () => {
             const result = retag(box, span, tag);
-            box.replaceChildren(...richNodes(result.text, false));
+            box.replaceChildren(...richNodes(result.text, false, beatShot));
+            if (beatShot) markBeats(box, shot);
             shot[key] = result.text;
             recount();
             box.focus(); selectSpan(box, result.span);
@@ -430,7 +545,87 @@
         }))
       });
     });
-    return el('section', {class: 'block'}, [el('h3', {class: 'block-title', id: id + '-title'}, [el('span', {text: title}), count]), box]);
+    const copy = COPYABLE.includes(key) ? el('button', {type: 'button', class: 'btn btn-quiet btn-icon block-copy', title: '复制' + title,
+      'aria-label': '复制' + title, onclick: event => copyPrompt(shot[key], event.currentTarget)}, icon('copy')) : null;
+    return el('section', {class: 'block'}, [el('h3', {class: 'block-title'}, [el('span', {id: id + '-title', text: title}), count, copy]), box]);
+  }
+
+  /* 时段块的时间弹层：改开始（即上一段的结束）或结束，回车或离开输入框生效，上下键按 0.1 秒调。 */
+  let beatEdit = null;
+  function openBeat(chip, box, shot) {
+    const index = [...box.querySelectorAll('.beat')].indexOf(chip);
+    if (!beatsOf(shot.video_prompt)[index]) return;
+    beatEdit = {box, shot, index};
+    fillBeat();
+    const pop = $('beat-pop');
+    pop.hidden = false;
+    place(pop, chip, 'start');
+    $('beat-to').focus(); $('beat-to').select();
+  }
+
+  function fillBeat() {
+    const {shot, index} = beatEdit, beat = beatsOf(shot.video_prompt)[index];
+    $('beat-from').value = tenth(beat.from / 10);
+    $('beat-from').disabled = index === 0;
+    $('beat-to').value = tenth(beat.to / 10);
+  }
+
+  function closeBeat(restore) {
+    const pop = $('beat-pop');
+    if (pop.hidden) return;
+    pop.hidden = true;
+    if (restore && beatEdit) beatEdit.box.focus();
+    beatEdit = null;
+  }
+
+  function commitBeat(edge) {
+    if (!beatEdit) return;
+    const {box, shot, index} = beatEdit, value = Number($(edge === 'from' ? 'beat-from' : 'beat-to').value);
+    if (!Number.isFinite(value) || (edge === 'from' && index === 0)) { fillBeat(); return; }
+    const before = shot.duration_seconds;
+    setBeatEnd(shot, edge === 'from' ? index - 1 : index, Math.round(value * 10));
+    box.replaceChildren(...richNodes(shot.video_prompt, false, shot));
+    markBeats(box, shot);
+    changed(); renderTable();
+    fillBeat();
+    place($('beat-pop'), box.querySelectorAll('.beat')[index], 'start');
+    if (shot.duration_seconds !== before) status(shot.number + ' 时长改为 ' + shot.duration_seconds + ' 秒。');
+  }
+
+  function setupBeatPop() {
+    const pop = $('beat-pop');
+    for (const [id, edge] of [['beat-from', 'from'], ['beat-to', 'to']]) {
+      $(id).addEventListener('change', () => commitBeat(edge));
+      $(id).addEventListener('keydown', event => {
+        if (event.key === 'Enter') { event.preventDefault(); commitBeat(edge); closeBeat(true); }
+        else if (event.key === 'Escape') { event.preventDefault(); closeBeat(true); }
+      });
+    }
+    pop.addEventListener('focusout', event => { if (!pop.contains(event.relatedTarget)) closeBeat(false); });
+    document.addEventListener('pointerdown', event => {
+      if (!pop.hidden && !pop.contains(event.target) && !event.target.closest('.beat')) closeBeat(false);
+    });
+  }
+
+  /* 一键复制提示词：去掉分段标记、保留换行，引用换成前后带空格的“@资产名”，方便在生成平台上手动设置引用的资产。
+     找不到的引用照原名写成“@名字”；<Picture N> 原样保留。 */
+  const COPYABLE = ['prompt', 'video_prompt'];
+  function promptText(text) {
+    return (text || '').replace(SEGMENT_PATTERN, '$2')
+      .replace(REF_PATTERN, (match, name) => {
+        if (name === undefined) return match;
+        const {asset} = resolve(name);
+        return ' @' + (asset ? asset.name : name.trim()) + ' ';
+      })
+      .split('\n').map(line => line.replace(/ {2,}/g, ' ').trim()).join('\n');
+  }
+
+  async function copyPrompt(text, node) {
+    if (!(text || '').trim()) { status('提示词是空的，没有可复制的内容。'); return; }
+    pulse(node, 'copied');
+    if (host) { host.postMessage({type: 'copyText', text: promptText(text)}); return; }
+    try { await navigator.clipboard.writeText(promptText(text)); status('已复制提示词。'); }
+    catch (_) { status('复制失败：浏览器没有允许写入剪贴板。'); }
   }
 
   /* ---------- 渲染：外框 ---------- */
@@ -683,16 +878,17 @@
   }
 
   /* 按 key 复用容器里的子节点：留下的就地同步，新来的淡入（@starting-style），去掉的淡出后再移除。 */
+  let leaveGone = false;   // 载入外部修改时为真：删除的条目留警告色残影，淡出得慢一些
   function syncKeyed(container, fresh, key) {
-    const old = new Map([...container.children].filter(node => !node.classList.contains('is-leaving'))
+    const old = new Map([...container.children].filter(node => !node.classList.contains('is-leaving') && !node.classList.contains('is-gone'))
       .map(node => [node.getAttribute(key), node]));
     for (const node of fresh) {
       const prev = old.get(node.getAttribute(key));
       if (prev) { morph(prev, node); old.delete(node.getAttribute(key)); } else container.append(node);
     }
     for (const node of old.values()) {
-      node.classList.add('is-leaving');
-      setTimeout(() => node.remove(), reducedMotion() ? 0 : 200);
+      node.classList.add(leaveGone ? 'is-gone' : 'is-leaving');
+      setTimeout(() => node.remove(), reducedMotion() ? 0 : leaveGone ? GONE_MS : 200);
     }
   }
 
@@ -2677,7 +2873,7 @@
       const box = (node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement).closest('.rich');
       if (!box) return;
       event.preventDefault();
-      event.clipboardData.setData('text/plain', selection.toString());
+      event.clipboardData.setData('text/plain', plainOf(selection.getRangeAt(0).cloneContents()));
       if (event.type === 'cut' && box.isContentEditable) document.execCommand('delete');
     };
     document.addEventListener('copy', plain);
@@ -2788,17 +2984,20 @@
 
   function changed() {
     state.dirty = true;
+    refreshBeats(followDurations());
     renderChrome(); renderTimeline();
   }
 
   function setEditing(on) {
     let pendingNormalize = false;
+    closeBeat(false);
     if (!on) {
       // 回到只读：显示上次保存的版本，时长照样按 0.1 秒规整显示，但不算未保存
       state.working = clone(state.doc);
       if (canEdit()) normalizeDurations(state.working);
       state.dirty = false;
       if (!shotById(state.selectedId)) state.selectedId = shots().length ? shots()[0].id : null;
+      seedDurations();
     } else {
       // 解锁：只读时规整过的时长与文件不同，算作待保存的修改
       pendingNormalize = JSON.stringify(state.working) !== JSON.stringify(state.doc);
@@ -2907,16 +3106,88 @@
 
   /* 换成外部版本：选中的镜头还在就保持，撤销记录清空（撤回去会丢掉外部修改）。 */
   function loadExternal(model) {
+    const before = state.doc, rows = [...$('shot-rows').children], clips = [...$('track').children];
     state.doc = model;
     state.working = clone(model);
     if (canEdit()) normalizeDurations(state.working);
     state.dirty = state.editing && JSON.stringify(state.working) !== JSON.stringify(model);
     history.past.length = 0; history.future.length = 0;
+    seedDurations();
     state.timelineSel = null;
     if (!shotById(state.selectedId)) state.selectedId = shots().length ? shots()[0].id : null;
+    leaveGone = true;
     if (state.editing && !canEdit()) { setEditing(false); }
     else render();
+    leaveGone = false;
+    showExternal(before, model, rows, clips);
     status('文件已在外部更新（修订 ' + model.revision + '），已载入。');
+  }
+
+  /* 外部修改载入后对比前后两版：新建或改动的镜头（表格行、时间线片段、详情栏里改了的块）、泳道条目、标记与标题闪一下强调色；
+     删除的镜头在原位置留一个警告色残影后淡出（泳道条目由 syncKeyed 处理）。只标当前画面里的，不留状态。 */
+  const GONE_MS = 1400;
+  function showExternal(before, after, rows, clips) {
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const oldShots = new Map(before.shots.map(shot => [shot.id, shot]));
+    const fresh = new Map();   // 镜头 id → 改了的字段（新建为 null）
+    for (const shot of after.shots) {
+      const old = oldShots.get(shot.id);
+      if (!old) fresh.set(shot.id, null);
+      else {
+        const fields = Object.keys(shot).filter(key => !same(shot[key], old[key]));
+        if (fields.length) fresh.set(shot.id, new Set(fields));
+      }
+    }
+    // 时间线：主轨片段的变化算到镜头的“视频”上；其他条目按 id 比对
+    const items = t => !t ? new Map() : new Map([...t.video, ...t.audio].flatMap(track => track.clips)
+      .concat(t.subtitles.flatMap(track => track.cues), t.markers).map(item => [item.id, item]));
+    const oldItems = items(before.timeline);
+    const mainShot = new Map(after.timeline ? after.timeline.video[0].clips.map(clip => [clip.id, clip.shot_id]) : []);
+    const freshItems = [];
+    for (const [id, item] of items(after.timeline)) {
+      if (same(item, oldItems.get(id))) continue;
+      const shotId = mainShot.get(id);
+      if (shotId) fresh.set(shotId, fresh.get(shotId) === null ? null : new Set([...(fresh.get(shotId) || []), 'video']));
+      else freshItems.push(id);
+    }
+    const flash = node => { if (node) pulse(node, 'is-fresh'); };
+    for (const [id, fields] of fresh) {
+      flash($('shot-rows').querySelector('tr[data-id="' + CSS.escape(id) + '"]'));
+      flash($('track').querySelector('.clip[data-id="' + CSS.escape(id) + '"]'));
+      if (id !== state.selectedId || state.timelineSel) continue;
+      const blocks = {description: '#f-description', prompt: '#f-prompt', video_prompt: '#f-video-prompt', video: '.block-video'};
+      for (const [field, selector] of Object.entries(blocks)) {
+        if (fields === null || fields.has(field)) flash($('detail').querySelector(selector) && $('detail').querySelector(selector).closest('.block'));
+      }
+    }
+    for (const id of freshItems) {
+      flash(document.querySelector('#lanes :is(.media-clip, .cue)[data-id="' + CSS.escape(id) + '"]'));
+      flash($('marker-band').querySelector('[data-marker="' + CSS.escape(id) + '"]'));
+    }
+    if (before.title !== after.title) flash($('doc-title'));
+    // 删除的镜头：表格行插回原位置、片段留在原坐标，警告色淡出后移除
+    const gone = id => !after.shots.some(shot => shot.id === id);
+    const ghost = (node, place) => {
+      node.classList.remove('is-fresh');
+      node.classList.add('is-gone');
+      node.inert = true;
+      place(node);
+      setTimeout(() => collapse(node), reducedMotion() ? 0 : GONE_MS);
+    };
+    // 残影淡出后移除；表格里下面的行从原位置滑上来，不直接跳
+    const collapse = node => {
+      const below = node.tagName === 'TR' ? [...node.parentNode.children].slice([...node.parentNode.children].indexOf(node) + 1) : [];
+      const height = node.offsetHeight;
+      node.remove();
+      if (!reducedMotion()) for (const row of below) row.animate([{translate: '0 ' + height + 'px'}, {translate: '0 0'}], {duration: 240, easing: 'ease-out'});
+    };
+    rows.forEach((row, index) => {
+      if (!row.dataset.id || !gone(row.dataset.id)) return;
+      const prev = rows.slice(0, index).reverse().find(node => !gone(node.dataset.id));
+      const anchor = prev && $('shot-rows').querySelector('tr[data-id="' + CSS.escape(prev.dataset.id) + '"]');
+      ghost(row, node => anchor ? anchor.after(node) : $('shot-rows').prepend(node));
+    });
+    for (const node of clips) if (node.dataset.id && gone(node.dataset.id)) ghost(node, item => $('track').append(item));
   }
 
   /* 保留用户的修改：以外部版本为保存基准，下次保存覆盖外部修改。文档身份跟随外部版本，否则保存会被拦截。 */
@@ -3111,6 +3382,7 @@
     if (host) host.addEventListener('message', event => {
       const data = event.data || {};
       if (data.type === 'saveResult' && pendingSave) finishSave(data.status);
+      else if (data.type === 'copyTextResult') status(data.status === 'copied' ? '已复制提示词，引用已换成 @资产名。' : '复制失败：剪贴板被占用，请重试。');
       else if (data.type === 'copyResult') status(data.status === 'copied' ? '已复制图片。' : '复制失败：图片无法读取或剪贴板被占用。');
       else if (data.type === 'info') showVersion(data.version);
       else if (data.type === 'update') showUpdate(data.version);
@@ -3126,6 +3398,7 @@
   setupAbout();
   setupMenu();
   setupPlainCopy();
+  setupBeatPop();
   setupPeek();
   setupDialog();
   setupTimelineDrag();
@@ -3140,6 +3413,7 @@
   setupEvents();
   // 旧文件的时长按 0.1 秒规整后显示。只读时不算未保存（关窗口不需要保存，也不会被保存卡住）；解锁后差异才算未保存，保存时写回
   const normalized = canEdit() ? normalizeDurations(state.working) : 0;
+  seedDurations();
   render();
   status(!canEdit() ? '这是已确认或定稿的版本，只能查看。'
     : normalized ? '有 ' + normalized + ' 个镜头的时长已按 0.1 秒规整显示（按累计切点取整，总长不变）；文件尚未改动，解锁编辑并保存后才写回。'

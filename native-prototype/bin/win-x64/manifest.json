@@ -6,19 +6,19 @@
   "build_inputs_sha256": {
     "native-prototype/build.py": "d6f3a200d004acd6ffb44c000c2247c4ab0287f8a120f77c30c936e713ee39b5",
     "scripts/editor_bundle.py": "ea5289a358961caa4e673a838aacf3d2cbafb568bd31cd56ee10ce90a37298c5",
-    "scripts/html_spec.py": "56b7886f9600fef39a4b5c94f12c4906b5a464aac9f738c98515fe834eef7c1c",
-    "native-prototype/src/Host.cs": "210a4e4970620be1e95f6d15585b615a720fd158e57d98a1f89cf74c9b405fc4",
+    "scripts/html_spec.py": "8d290cec2d71e8b1d3e46f9ac79f3b2f4c7b218b764f4e44865072063c64bdc4",
+    "native-prototype/src/Host.cs": "72ef9f31dcca35db54e3e77729bef6f3cf6084e1806502d559d7c6ca50249390",
     "native-prototype/src/Media.cs": "1152da899ba777af896bd7aa5b068148cf3263d8c490272efc3b496731393e8a",
     "native-prototype/src/Subtitle.cs": "04245072eb00d017de62bcf21772b803d7c330c82e4bedef5d30d8e4fc5ccab8",
     "native-prototype/src/DocumentSession.cs": "02d517676db44ebc7ceca3c60b200e99a689bf71cf4bc002559027bf79b2f402",
-    "native-prototype/ui/index.html": "92570ccfe68d30e512bb67e8a2e8136967627bc12f4c2dfb238c700b61e04a9d",
-    "native-prototype/ui/tokens.css": "dc8540fca8f9e5f004dd1d035e01d13b38dfff1c21d9b0c3d578a4e16d582c8f",
-    "native-prototype/ui/app.css": "e8af7ccbec03e19369e386cf360d6c4e0aae180eeea906b9fb9d0840f232081b",
-    "native-prototype/ui/app.js": "e6d3f3c03664727cd4a42f9a2946c35e96e541abf1aad2d025482d5229583a04",
+    "native-prototype/ui/index.html": "711c403b93fc8fa07aaf108585949eaa0974447c17e8a5624b0816e8e1c3da23",
+    "native-prototype/ui/tokens.css": "a60cb4df5ed35b3f633b298420c4333bf0a9764c22765aadd609fb6411b8d861",
+    "native-prototype/ui/app.css": "b647d0059f3543a5ba12c7e8348ca637fd72d4a098960bf61663696b8efdb3f6",
+    "native-prototype/ui/app.js": "cf0c304a6ff8cbcbe4e611df9e30f71d1453b3c35756004134d5e5dee5d7f70d",
     "native-prototype/assets/kpl.ico": "6c17813e0fcc6e60f355f8f5544f65bde4f950ae3d85463c91b5030a5910d901"
   },
   "files_sha256": {
-    "KPL规格编辑器.exe": "e3f80ecd846d22a477a903a39769d6ecc52a1bc1bd3daa8a2481811cbc18a41a",
+    "KPL规格编辑器.exe": "a74a353490c96ebffd81f10ebeab2f02a62c4336af5e4ca324e9d21e33c3635d",
     "Microsoft.Web.WebView2.Core.dll": "37f37a80a2ce89388b30c38185a9ba3af1727a2ebbb59698e13725db770c9816",
     "WebView2Loader.dll": "01f0a861a802233411fe0d406988c211794c0f58ce2edb62ff97c31f5b1aa2fe"
   }

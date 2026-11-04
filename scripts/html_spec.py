@@ -49,6 +49,10 @@ ASSET_DIR = '../05_参考资产/'
 DESCRIPTION_LIMIT = 300
 SEGMENTED_FIELDS = ('description', 'prompt', 'video_prompt')
 SEGMENT = re.compile(r'\{(?:镜头|风格|场景|动态|约束)[:：]((?:@\{[^{}]*\}|[^{}])*)\}')
+TAGGED_SEGMENT = re.compile(r'\{(镜头|风格|场景|动态|约束)[:：]((?:@\{[^{}]*\}|[^{}])*)\}')
+# 视频提示词的动态时段只用固定写法 {动态:0-4秒：内容}，精确到 0.1 秒；其他写法的时间范围一律拒绝
+BEAT = re.compile(r'((?:0|[1-9]\d*)(?:\.\d)?)-((?:0|[1-9]\d*)(?:\.\d)?)秒：')
+LOOSE_TIME = re.compile(r'\d+(?:\.\d+)?\s*秒?\s*(?:到|至|~|～|-|－|—|–)\s*\d+(?:\.\d+)?\s*秒')
 HERE = Path(__file__).resolve().parent.parent
 APP = HERE / 'assets' / 'user-spec.js'
 
@@ -312,6 +316,28 @@ def check_segments(label, value):
                              'with no untagged text: %s' % (label, number, line.strip()[:60]))
 
 
+def check_beats(label, value, duration):
+    """视频提示词的动态时段：只在动态段开头用固定写法；有时段时从 0 开始首尾相接，最后一段结束于镜头时长。"""
+    tenths = lambda text: round(float(text) * 10)
+    beats = []
+    for match in TAGGED_SEGMENT.finditer(value):
+        head = BEAT.match(match.group(2)) if match.group(1) == '动态' else None
+        if LOOSE_TIME.search(match.group(2)[head.end():] if head else match.group(2)):
+            raise ValueError('%s: write a time range only at the start of a 动态 segment, as {动态:0-4秒：内容}; '
+                             'one time range per segment: %s' % (label, match.group(0)[:60]))
+        if head:
+            beats.append((tenths(head.group(1)), tenths(head.group(2))))
+    end = 0
+    for number, (start, stop) in enumerate(beats, 1):
+        if start != end or stop <= start:
+            raise ValueError('%s: timed 动态 segments must start at 0 and join end to end; segment %d is %s-%s'
+                             % (label, number, start / 10, stop / 10))
+        end = stop
+    if beats and re.fullmatch(r'\d+(?:\.\d)?|\.\d', duration.strip()) and end != tenths(duration):
+        raise ValueError('%s: the last timed 动态 segment must end at the shot duration %s seconds, not %s'
+                         % (label, duration.strip(), end / 10))
+
+
 def human(value):
     return escape(value or '未填写', quote=True)
 
@@ -558,7 +584,7 @@ def _apply_changes_locked(root, relative, expected, patch):
     operations = patch.get('operations') if isinstance(patch, dict) else None
     if not isinstance(operations, list) or not operations:
         raise ValueError('at least one explicit operation is required')
-    changed = []
+    changed, timed = [], set()
     for operation in operations:
         if not isinstance(operation, dict) or operation.get('target') not in {'project', 'shot', 'asset'}:
             raise ValueError('invalid operation')
@@ -591,6 +617,7 @@ def _apply_changes_locked(root, relative, expected, patch):
                 for field in SEGMENTED_FIELDS:
                     if isinstance(row.get(field), str):
                         check_segments(ident + ' ' + field, row[field])
+                timed.add(ident)
             rows.append(row)
         elif action == 'remove':
             if operation.get('deletion_authorized') is not True or not isinstance(operation.get('authorization_ref'), str) or not operation['authorization_ref'].strip():
@@ -611,10 +638,16 @@ def _apply_changes_locked(root, relative, expected, patch):
                 raise ValueError(kind + ' field changed or is invalid')
             if kind == 'shot' and field in SEGMENTED_FIELDS and operation['new'] != operation['old']:
                 check_segments(ident + ' ' + field, operation['new'])
+            if kind == 'shot' and field in ('video_prompt', 'duration_seconds') and operation['new'] != operation['old']:
+                timed.add(ident)
             matches[0][field] = operation['new']
         else:
             raise ValueError('unsupported ' + kind + ' operation')
         changed.append(kind + ':' + ident)
+    # 时段与镜头时长要一起对得上：改其中一个时，另一个也要在同一批操作里改好
+    for row in model['shots']:
+        if row['id'] in timed and isinstance(row.get('video_prompt'), str) and isinstance(row.get('duration_seconds'), str):
+            check_beats(row['id'] + ' video_prompt', row['video_prompt'], row['duration_seconds'])
     if 'timeline' in model:
         # 已授权移除的镜头不再占主轨格子，它关联的视频随之解除
         shot_ids = {row['id'] for row in model['shots']}
