@@ -320,8 +320,11 @@
 
   function imageUrl(path) {
     if (typeof path !== 'string' || !path.startsWith(ASSET_DIR)) return null;
+    if (exported) {
+      const mapped = exported.map && Object.prototype.hasOwnProperty.call(exported.map, path) ? exported.map[path] : null;
+      return mapped ? encodeURI(mapped) : exported.base + encodeURI(path);
+    }
     const rel = path.slice(ASSET_DIR.length).split('/').map(encodeURIComponent).join('/');
-    if (exported) return exported.base + encodeURI(path);
     return (host ? 'https://kpl-assets.local/' : 'preview-assets/') + rel;
   }
 
@@ -563,7 +566,8 @@
     return el('section', {class: 'block'}, [el('h3', {class: 'block-title'}, [el('span', {id: id + '-title', text: title}), count, copy]), box]);
   }
 
-  /* 时段块的时间弹层：改开始（即上一段的结束）或结束，回车或离开输入框生效，上下键按 0.1 秒调。 */
+  /* 时段块的时间弹层：改开始（即上一段的结束）或结束；回车或右侧对勾生效，×/Esc 或点弹层外取消。
+     上下键按 0.1 秒调。 */
   let beatEdit = null;
   function openBeat(chip, box, shot) {
     const index = [...box.querySelectorAll('.beat')].indexOf(chip);
@@ -591,30 +595,33 @@
     beatEdit = null;
   }
 
-  function commitBeat(edge) {
-    if (!beatEdit) return;
-    const {box, shot, index} = beatEdit, value = Number($(edge === 'from' ? 'beat-from' : 'beat-to').value);
-    if (!Number.isFinite(value) || (edge === 'from' && index === 0)) { fillBeat(); return; }
+  /* 两个输入框一起生效，避免先写开始后刷新输入框时丢掉刚输入的结束时间。返回是否写入成功。 */
+  function commitBeatValues() {
+    if (!beatEdit) return false;
+    const {box, shot, index} = beatEdit;
+    const from = Math.round(Number($('beat-from').value) * 10), to = Math.round(Number($('beat-to').value) * 10);
+    if (!Number.isFinite(from) || !Number.isFinite(to) || to <= 0) { fillBeat(); return false; }
     const before = shot.duration_seconds;
-    setBeatEnd(shot, edge === 'from' ? index - 1 : index, Math.round(value * 10));
+    if (index > 0) setBeatEnd(shot, index - 1, from);
+    setBeatEnd(shot, index, to);
     box.replaceChildren(...richNodes(shot.video_prompt, false, shot));
     markBeats(box, shot);
     changed(); renderTable();
-    fillBeat();
-    place($('beat-pop'), box.querySelectorAll('.beat')[index], 'start');
     if (shot.duration_seconds !== before) status(shot.number + ' 时长改为 ' + shot.duration_seconds + ' 秒。');
+    return true;
   }
 
   function setupBeatPop() {
     const pop = $('beat-pop');
-    for (const [id, edge] of [['beat-from', 'from'], ['beat-to', 'to']]) {
-      $(id).addEventListener('change', () => commitBeat(edge));
+    for (const id of ['beat-from', 'beat-to']) {
       $(id).addEventListener('keydown', event => {
-        if (event.key === 'Enter') { event.preventDefault(); commitBeat(edge); closeBeat(true); }
+        if (event.key === 'Enter') { event.preventDefault(); if (commitBeatValues()) closeBeat(true); }
         else if (event.key === 'Escape') { event.preventDefault(); closeBeat(true); }
       });
     }
-    pop.addEventListener('focusout', event => { if (!pop.contains(event.relatedTarget)) closeBeat(false); });
+    $('beat-ok').addEventListener('click', () => { if (commitBeatValues()) closeBeat(true); });
+    $('beat-cancel').addEventListener('click', () => closeBeat(true));
+    pop.addEventListener('focusout', event => { if (!pop.hidden && !pop.contains(event.relatedTarget)) closeBeat(false); });
     document.addEventListener('pointerdown', event => {
       if (!pop.hidden && !pop.contains(event.target) && !event.target.closest('.beat')) closeBeat(false);
     });
@@ -628,7 +635,7 @@
       return;
     }
     openMenu({trigger, align: 'end', label: '导出', restore: () => trigger.focus(), items: [
-      {label: '导出 HTML…', hint: '只读交接', icon: icon('doc'), pick: () => exportAs('exportHtml')},
+      {label: '导出 HTML 交接包…', hint: 'ZIP · 含资产图与视频', icon: icon('doc'), pick: () => exportAs('exportHtml')},
       {label: '导出视频…', hint: 'MP4 · MOV · WAV', icon: icon('film'), pick: openVideoExport}
     ].map(item => Object.assign({checked: false}, item))});
   }
@@ -641,7 +648,6 @@
 
   /* 导出视频的设置：格式、分辨率、帧率都要用户点选，不替用户猜（WAV 只要格式）。
      分辨率按预览画幅给出常用尺寸；没设画幅时按第一个视频的尺寸，再没有按 16:9。 */
-  const VIDEO_FORMATS = [['mp4', 'MP4 · H.264'], ['mov', 'MOV · ProRes 422'], ['wav', 'WAV · 仅声音']];
   const VIDEO_FPS = [['24000/1001', '23.976'], ['24', '24'], ['25', '25'], ['30000/1001', '29.97'], ['30', '30'], ['50', '50'], ['60', '60']];
   const videoJob = {running: false};
   const even = value => Math.max(2, Math.round(value / 2) * 2);
@@ -656,14 +662,28 @@
   function openVideoExport() {
     if (!host) { status('预览模式：没有连接宿主程序，不能导出文件。'); return; }
     const dialog = $('video-dialog'), ratio = exportRatio();
-    const chips = (box, name, options) => box.replaceChildren(...options.map(([key, label]) =>
-      el('label', {class: 'chip'}, [el('input', {type: 'radio', name, value: key}), el('span', {text: label})])));
-    const value = name => { const input = dialog.querySelector('input[name="' + name + '"]:checked'); return input ? input.value : null; };
+    const formatChips = [['mp4', 'MP4', 'H.264'], ['mov', 'MOV', 'ProRes 422'], ['wav', 'WAV', '仅声音']];
+    $('video-format').replaceChildren(...formatChips.map(([key, main, sub]) =>
+      el('label', {class: 'chip'}, [el('input', {type: 'radio', name: 'vformat', value: key}),
+        el('span', {class: 'chip-format'}, [el('b', {text: main}), el('small', {text: sub})])])));
+    const fill = (node, options) => {
+      node.replaceChildren(el('option', {value: '', disabled: true, selected: true, text: '选择…'}),
+        ...options.map(([key, label]) => el('option', {value: key, text: label})));
+      node.value = '';
+    };
+    const value = name => {
+      const radios = dialog.querySelectorAll('input[name="' + name + '"]');
+      if (radios.length) {
+        const checked = dialog.querySelector('input[name="' + name + '"]:checked');
+        return checked ? checked.value : null;
+      }
+      const input = dialog.querySelector('select[name="' + name + '"]');
+      return input ? input.value : null;
+    };
     // 竖画幅时短边是宽
     const sizes = [2160, 1440, 1080, 720].map(side => ratio.value >= 1 ? [even(side * ratio.value), side] : [side, even(side / ratio.value)]);
-    chips($('video-format'), 'vformat', VIDEO_FORMATS);
-    chips($('video-size'), 'vsize', sizes.map(([w, h]) => [w + 'x' + h, w + '×' + h]));
-    chips($('video-fps'), 'vfps', VIDEO_FPS);
+    fill($('video-size'), sizes.map(([w, h]) => [w + 'x' + h, w + '×' + h]));
+    fill($('video-fps'), VIDEO_FPS);
     $('video-size-label').textContent = '分辨率 · ' + ratio.label;
     const sync = () => {
       const audioOnly = value('vformat') === 'wav';
@@ -701,14 +721,15 @@
   }
 
   const EXPORT_MESSAGES = {
-    exported: name => '已导出 ' + name + '。连同项目文件夹一起发给对方，图片和视频才能显示。',
-    not_overwritten: name => name + ' 不是导出的只读页面，没有覆盖；请换一个文件名。',
-    invalid_target: () => '只能导出为 .html 文件。',
+    exported: (name, data) => '已导出 ' + name + '（含 ' + (data.included || 0) + ' 个素材）。解压后打开其中的 HTML 即可查看。'
+      + (data.missing ? '有 ' + data.missing + ' 个素材找不到，未包含在包内。' : ''),
+    not_overwritten: name => name + ' 不是导出的交接包，没有覆盖；请换一个文件名。',
+    invalid_target: () => '只能导出为 .zip 交接包。',
     write_failed: name => '无法写入 ' + name + '：文件被占用或没有写入权限。'
   };
   function onExportResult(data) {
     if (data.kind !== 'html') { onVideoExport(data); return; }
-    if (data.status !== 'cancelled') status((EXPORT_MESSAGES[data.status] || EXPORT_MESSAGES.write_failed)(data.path));
+    if (data.status !== 'cancelled') status((EXPORT_MESSAGES[data.status] || EXPORT_MESSAGES.write_failed)(data.path, data));
   }
 
   /* 一键复制提示词：去掉分段标记、保留换行，引用换成前后带空格的“@资产名”，方便在生成平台上手动设置引用的资产。
@@ -2292,7 +2313,10 @@
   const media = {urls: new Map(), elements: new Map(), pending: new Set(), picking: null, request: 0, live: false};
 
   function mediaUrl(source) {
-    if (exported) return exported.base + encodeURI(source).replace(/#/g, '%23');
+    if (exported) {
+      const mapped = exported.map && Object.prototype.hasOwnProperty.call(exported.map, source) ? exported.map[source] : null;
+      return (mapped ? encodeURI(mapped) : exported.base + encodeURI(source)).replace(/#/g, '%23');
+    }
     if (!host) return 'preview-assets/' + encodeURIComponent(baseName(source));
     return media.urls.get(source);   // undefined：尚未解析；''：文件不存在或格式不支持
   }

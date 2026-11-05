@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.IO.Compression;
+using System.Text;
 
 /* 宿主中不依赖 WebView2 窗口的部分：缩略图缓存与偏好合并。只写参数给出的临时目录。 */
 internal static class HostTests
@@ -90,6 +92,57 @@ internal static class HostTests
             string graph = EditorWindow.BuildGraph(plan, 1280, 720, "25", true, inputs);
             Check(inputs.Count == 8 + 6 + 6 && graph.Contains("asetpts=N/SR/TB,apad,atrim=0:5[aout]") && graph.Contains("adelay=2000:all=1"),
                 "export graph " + graph);
+
+            // HTML 交接包：项目名与版本进文件名，引用的资产图与时间线素材都装进 zip，缺失素材单独计数
+            string project = Path.Combine(root, "项目");
+            string handoffDocDir = Path.Combine(project, "01_项目说明");
+            string handoffAssetDir = Path.Combine(project, "05_参考资产");
+            string handoffMediaDir = Path.Combine(project, "07_预演交付");
+            Directory.CreateDirectory(handoffDocDir); Directory.CreateDirectory(handoffAssetDir); Directory.CreateDirectory(handoffMediaDir);
+            string handoffAsset = Path.Combine(handoffAssetDir, "店面_1.png");
+            string handoffUnused = Path.Combine(handoffAssetDir, "未用.png");
+            string handoffReferenced = Path.Combine(handoffAssetDir, "引用图.png");
+            string handoffTake = Path.Combine(handoffMediaDir, "S01 #2.mp4");
+            string handoffAudio = Path.Combine(handoffMediaDir, "音乐.wav");
+            using (var image = new Bitmap(32, 18)) image.Save(handoffAsset, ImageFormat.Png);
+            using (var image = new Bitmap(8, 8)) image.Save(handoffUnused, ImageFormat.Png);
+            using (var image = new Bitmap(8, 8)) image.Save(handoffReferenced, ImageFormat.Png);
+            File.WriteAllBytes(handoffTake, new byte[] { 1, 2, 3 });
+            File.WriteAllBytes(handoffAudio, new byte[] { 4, 5 });
+            string handoffModel = "{\"schema\":\"kpl-user-spec-v3\",\"version\":\"v001\",\"title\":\"清晨 面馆\"," +
+                "\"assets\":[{\"path\":\"../05_参考资产/店面_1.png\"},{\"path\":\"../05_参考资产/未用.png\"},{\"path\":\"../05_参考资产/引用图.png\"}]," +
+                "\"shots\":[{\"thumbnail\":\"../05_参考资产/店面_1.png\",\"description\":\"看 @{引用图} 的纹理\"}]," +
+                "\"timeline\":{\"video\":[{\"clips\":[{\"source\":\"../07_预演交付/S01 #9.mp4\"," +
+                "\"takes\":[{\"source\":\"../07_预演交付/S01 #2.mp4\"}]}]}]," +
+                "\"audio\":[{\"clips\":[{\"source\":\"../07_预演交付/音乐.wav\"}]}]}}";
+            string handoffSpec = Path.Combine(handoffDocDir, "01_项目说明_v001_draft.kpldoc");
+            string handoffZip = Path.Combine(root, "handoff", "清晨 面馆_v001_交接包.zip");
+            Directory.CreateDirectory(Path.GetDirectoryName(handoffZip));
+            // 测试程序没有内嵌页面模板，用带同样标记的最小 HTML 验证打包与路径映射
+            const string handoffTemplate = "<html><head><meta charset=\"utf-8\"><meta http-equiv=\"Content-Security-Policy\" content=\"old\"></head>" +
+                "<body><script type=\"application/json\" id=\"kpl-export\">null</script></body></html>";
+            var handoff = EditorWindow.WriteHandoffPage(handoffModel, handoffSpec, handoffZip, handoffTemplate);
+            Check((string)handoff["status"] == "exported", "handoff status " + handoff["status"]);
+            Check(Convert.ToInt32(handoff["included"]) == 4, "handoff resource count " + handoff["included"]);
+            Check(Convert.ToInt32(handoff["missing"]) == 1, "handoff missing count " + handoff["missing"]);
+            var names = new List<string>();
+            string handoffHtml = null;
+            using (var stream = File.OpenRead(handoffZip))
+            using (var zipped = new ZipArchive(stream, ZipArchiveMode.Read))
+                foreach (var entry in zipped.Entries)
+                {
+                    names.Add(entry.FullName);
+                    if (entry.FullName.EndsWith("_交接查看.html", StringComparison.Ordinal))
+                        using (var reader = new StreamReader(entry.Open(), Encoding.UTF8)) handoffHtml = reader.ReadToEnd();
+                }
+            Check(names.Contains("清晨 面馆_v001_交接查看.html"), "handoff html name: " + String.Join(", ", names.ToArray()));
+            Check(names.Contains("资料/05_参考资产/店面_1.png"), "handoff asset entry: " + String.Join(", ", names.ToArray()));
+            Check(names.Contains("资料/07_预演交付/S01 #2.mp4"), "handoff video entry: " + String.Join(", ", names.ToArray()));
+            Check(names.Contains("资料/07_预演交付/音乐.wav"), "handoff audio entry: " + String.Join(", ", names.ToArray()));
+            Check(names.Contains("资料/05_参考资产/引用图.png"), "referenced asset missing: " + String.Join(", ", names.ToArray()));
+            Check(!names.Contains("资料/05_参考资产/未用.png"), "unreferenced asset packed");
+            Check(handoffHtml != null && handoffHtml.Contains("kpl-view-only") && handoffHtml.Contains("店面_1.png") && handoffHtml.Contains("\"map\""),
+                "handoff html lacks view-only marker or resource map");
 
             Console.WriteLine("PASS: " + assertions + " thumbnail / prefs / media path / export assertions");
             return 0;

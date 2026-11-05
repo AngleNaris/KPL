@@ -70,7 +70,7 @@ def main(argv=None):
         resource.write_text(template(), encoding='utf-8', newline='\n')
         command = [str(args.csc), '/nologo', '/target:winexe', '/platform:x64', '/optimize+',
             '/out:' + str(out / 'KPL规格编辑器.exe'), '/win32icon:' + str(ICON), '/reference:' + str(args.core),
-            '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll', '/reference:System.Web.Extensions.dll',
+            '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll', '/reference:System.Web.Extensions.dll', '/reference:System.IO.Compression.dll',
             '/resource:' + str(resource) + ',KplNativeTemplate',
             '/resource:' + str(ICON) + ',KplIcon',
             str(HERE / 'src' / 'Host.cs'), str(HERE / 'src' / 'Media.cs'), str(HERE / 'src' / 'Subtitle.cs'), str(HERE / 'src' / 'Export.cs'), str(HERE / 'src' / 'VideoExport.cs'),

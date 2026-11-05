@@ -20,6 +20,8 @@
   <symbol id="i-image" viewBox="0 0 24 24"><path d="M3 5h18v14H3z M3 16l5-5 4 4 3-3 6 6 M15.5 8.5v.5"/></symbol>
   <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2z M12 10v5 M12 17.5v.5"/></symbol>
   <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 0C12.8 8 16 11.2 24 12C16 12.8 12.8 16 12 24C11.2 16 8 12.8 0 12C8 11.2 11.2 8 12 0Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12 M18 6L6 18"/></symbol>
   <symbol id="i-mark-none" viewBox="0 0 24 24"><path d="M5 5h14v14H5z" stroke-dasharray="2 3"/></symbol>
   <symbol id="i-mark-done" viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></symbol>
   <symbol id="i-mark-revise" viewBox="0 0 24 24"><path d="M5 21V4 M5 4h13l-3 4.5 3 4.5H5"/></symbol>
@@ -65,6 +67,7 @@
           <dt>仓库</dt><dd class="mono">github.com/AngleNaris/KPL</dd>
         </dl>
         <p>启动时会静默检查 GitHub 上是否有新版本，只提示，不会自动下载或安装。</p>
+        <p class="about-dedication">此应用为小猫咪的福祉而创造</p>
       </section>
       <button type="button" class="btn btn-quiet" id="display-trigger" aria-expanded="false" aria-controls="display-panel">
         <svg class="icon" aria-hidden="true"><use href="#i-display"/></svg><span>显示</span>
@@ -100,14 +103,14 @@
     </div>
     <div class="toolbar-end">
       <p class="dirty-mark" id="dirty-mark" hidden>未保存修改</p>
-      <button type="button" class="btn" id="export-trigger" aria-haspopup="menu" aria-expanded="false">
-        <svg class="icon" aria-hidden="true"><use href="#i-export"/></svg><span>导出</span>
-      </button>
       <button type="button" class="btn" id="edit-toggle">
         <svg class="icon" aria-hidden="true"><use href="#i-unlock"/></svg><span>解锁编辑</span>
       </button>
       <button type="button" class="btn btn-primary" id="save" disabled>
         <svg class="icon" aria-hidden="true"><use href="#i-save"/></svg><span>保存</span><kbd>Ctrl+S</kbd>
+      </button>
+      <button type="button" class="btn" id="export-trigger" aria-haspopup="menu" aria-expanded="false">
+        <svg class="icon" aria-hidden="true"><use href="#i-export"/></svg><span>导出</span>
       </button>
     </div>
   </nav>
@@ -214,14 +217,28 @@
   </div>
 </dialog>
 <div class="marquee" id="marquee" aria-hidden="true" hidden></div>
-<dialog class="dialog" id="video-dialog" aria-labelledby="video-title">
+<dialog class="dialog export-dialog" id="video-dialog" aria-labelledby="video-title">
   <h2 class="dialog-title" id="video-title">导出视频</h2>
-  <fieldset class="export-field"><legend class="label">格式</legend><div class="chips" id="video-format"></div></fieldset>
-  <fieldset class="export-field" id="video-size-field"><legend class="label" id="video-size-label">分辨率</legend><div class="chips" id="video-size"></div></fieldset>
-  <fieldset class="export-field" id="video-fps-field"><legend class="label">帧率</legend><div class="chips" id="video-fps"></div></fieldset>
-  <div class="dialog-actions">
+  <fieldset class="export-field"><legend class="label">格式</legend><div class="chips chips-format" id="video-format"></div></fieldset>
+  <div class="export-pair">
+    <fieldset class="export-field" id="video-size-field">
+      <legend class="label" id="video-size-label">分辨率</legend>
+      <div class="select-wrap">
+        <select class="select mono" id="video-size" name="vsize" aria-label="分辨率"></select>
+        <svg class="icon select-icon" aria-hidden="true"><use href="#i-chevron"/></svg>
+      </div>
+    </fieldset>
+    <fieldset class="export-field" id="video-fps-field">
+      <legend class="label">帧率</legend>
+      <div class="select-wrap">
+        <select class="select mono" id="video-fps" name="vfps" aria-label="帧率"></select>
+        <svg class="icon select-icon" aria-hidden="true"><use href="#i-chevron"/></svg>
+      </div>
+    </fieldset>
+  </div>
+  <div class="dialog-actions dialog-actions-fill">
     <button type="button" class="btn" data-choice="cancel">取消</button>
-    <button type="button" class="btn btn-primary" data-choice="export" id="video-go">导出…</button>
+    <button type="button" class="btn btn-primary" data-choice="export" id="video-go" disabled>导出…</button>
   </div>
 </dialog>
 <dialog class="dialog" id="external-dialog" aria-labelledby="external-title" aria-describedby="external-text">
@@ -236,6 +253,10 @@
 <div class="beat-pop" id="beat-pop" role="dialog" aria-label="动态时段" hidden>
   <label class="beat-field"><span class="label">开始</span><input class="cell-input mono" id="beat-from" type="number" step="0.1" min="0" inputmode="decimal"></label>
   <label class="beat-field"><span class="label">结束</span><input class="cell-input mono" id="beat-to" type="number" step="0.1" min="0.1" inputmode="decimal"></label>
+  <div class="beat-actions">
+    <button type="button" class="btn btn-quiet btn-icon beat-btn" id="beat-ok" title="确定（回车）" aria-label="确定"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg></button>
+    <button type="button" class="btn btn-quiet btn-icon beat-btn" id="beat-cancel" title="取消（Esc）" aria-label="取消"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
 </div>
 <section class="popover help-panel" id="help-panel" aria-labelledby="help-title" tabindex="-1" hidden>
   <h2 class="label" id="help-title">时间线说明</h2>
